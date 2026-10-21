@@ -2,12 +2,12 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00 es la fase de arranque. Las demás fases son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
+F00 está integrada y F01 está en desarrollo. F02 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
-| **F00** | **Bootstrap y CI/CD Base** | Estructura del proyecto Go, compilación, GitHub Actions, primer Vault efímero y framework reutilizable de pruebas de integración. | En revisión — [PR #1](https://github.com/ml0renz0/secretwright/pull/1) |
-| **F01** | **Vault Connectivity & Authentication** | Cliente Vault, configuración, TLS, tokens, autenticación, namespaces y gestión de conexiones. | Pendiente |
+| **F00** | **Bootstrap y CI/CD Base** | Estructura del proyecto Go, compilación, GitHub Actions, primer Vault efímero y framework reutilizable de pruebas de integración. | Integrada — [PR #1](https://github.com/ml0renz0/secretwright/pull/1) |
+| **F01** | **Vault Connectivity & Authentication** | Cliente Vault, configuración, TLS, tokens, autenticación, namespaces y gestión de conexiones. | En desarrollo — [contrato](features/F01-connectivity-authentication.md) |
 | **F02** | **KV Storage: Read & Navigation** | Soporte KV v1/v2, detección de mounts, `ls`, `cd`, `cat`, navegación y resolución de rutas. | Pendiente |
 | **F03** | **KV Storage: Write & Versioning** | `put`, `rm`, `cp`, `mv`, gestión de versiones KV v2, recuperación de secretos y operaciones seguras. | Pendiente |
 | **F04** | **Interactive Shell** | REPL, prompt, historial seguro, autocompletado remoto, búsqueda interactiva y ejecución no interactiva. | Pendiente |
