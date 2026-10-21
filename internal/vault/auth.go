@@ -34,9 +34,7 @@ func (c *Client) CheckToken(ctx context.Context, token string) (AuthStatus, erro
 	if err != nil {
 		return AuthStatus{}, errors.New("could not initialize the authentication client")
 	}
-	client.SetHeaders(requestHeaders())
-	client.SetNamespace(c.namespace)
-	client.SetToken(token)
+	configureRequestClient(client, c.namespace, token)
 	defer client.SetToken("")
 	secret, err := client.Auth().Token().LookupSelfWithContext(ctx)
 	if err != nil {

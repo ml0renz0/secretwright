@@ -149,13 +149,13 @@ func TestKVExplicitMountAndTokenFileOverrideDiscoveryAndEnvironment(t *testing.T
 					readPath, listPath = "/v1/team/nested/data/app/item", "/v1/team/nested/metadata/app"
 				}
 				switch {
-				case r.Method == http.MethodGet && r.URL.Path == readPath:
+				case r.Method == http.MethodGet && !kvRequestIsList(r) && r.URL.Path == readPath:
 					if version == 1 {
 						kvWriteData(t, w, map[string]any{"value": "file-source-fixture"})
 					} else {
 						kvWriteData(t, w, map[string]any{"data": map[string]any{"value": "file-source-fixture"}, "metadata": map[string]any{"version": 1}})
 					}
-				case r.Method == "LIST" && strings.TrimSuffix(r.URL.Path, "/") == listPath:
+				case kvRequestIsList(r) && strings.TrimSuffix(r.URL.Path, "/") == listPath:
 					kvWriteData(t, w, map[string]any{"keys": []string{"item"}})
 				default:
 					t.Errorf("explicit mount used an unexpected operation: %s %s", r.Method, r.URL.Path)
@@ -281,16 +281,16 @@ func kvCLIFixture(t *testing.T) *httptest.Server {
 			t.Errorf("KV CLI attempted a write operation: %s", r.Method)
 		}
 		requestPath := strings.TrimSuffix(r.URL.Path, "/")
-		if r.Method == http.MethodGet && requestPath == "/v1/sys/internal/ui/mounts" {
+		if r.Method == http.MethodGet && !kvRequestIsList(r) && requestPath == "/v1/sys/internal/ui/mounts" {
 			kvWriteData(t, w, map[string]any{"secret": map[string]any{
-				"legacy/": map[string]any{"type": "kv", "options": map[string]string{}},
-				"secret/": map[string]any{"type": "kv", "options": map[string]string{"version": "2"}},
+				"legacy/":      map[string]any{"type": "kv", "options": map[string]string{}},
+				"secret/":      map[string]any{"type": "kv", "options": map[string]string{"version": "2"}},
 				"team/nested/": map[string]any{"type": "kv", "options": map[string]string{"version": "2"}},
-				"transit/": map[string]any{"type": "transit"},
+				"transit/":     map[string]any{"type": "transit"},
 			}})
 			return
 		}
-		if r.Method == http.MethodGet && strings.HasPrefix(requestPath, "/v1/sys/internal/ui/mounts/") {
+		if r.Method == http.MethodGet && !kvRequestIsList(r) && strings.HasPrefix(requestPath, "/v1/sys/internal/ui/mounts/") {
 			logical := strings.TrimPrefix(requestPath, "/v1/sys/internal/ui/mounts/")
 			mount, version := "secret/", "2"
 			if strings.HasPrefix(logical, "legacy/") {
@@ -301,11 +301,11 @@ func kvCLIFixture(t *testing.T) *httptest.Server {
 			kvWriteData(t, w, map[string]any{"path": mount, "type": "kv", "options": map[string]string{"version": version}})
 			return
 		}
-		if r.Method == "LIST" && (requestPath == "/v1/secret/metadata/app" || requestPath == "/v1/legacy/app") {
+		if kvRequestIsList(r) && (requestPath == "/v1/secret/metadata/app" || requestPath == "/v1/legacy/app") {
 			kvWriteData(t, w, map[string]any{"keys": []string{"nested/", "item"}})
 			return
 		}
-		if r.Method == http.MethodGet {
+		if r.Method == http.MethodGet && !kvRequestIsList(r) {
 			switch requestPath {
 			case "/v1/legacy/app/item":
 				kvWriteData(t, w, map[string]any{"value": "v1-fixture-value", "data": map[string]any{"value": "ordinary-data-field"}})
@@ -321,6 +321,10 @@ func kvCLIFixture(t *testing.T) *httptest.Server {
 		t.Errorf("unexpected KV CLI operation: %s %s", r.Method, r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
 	}))
+}
+
+func kvRequestIsList(request *http.Request) bool {
+	return request.Method == "LIST" || (request.Method == http.MethodGet && request.URL.Query().Get("list") == "true")
 }
 
 func kvWriteData(t *testing.T, writer http.ResponseWriter, data map[string]any) {

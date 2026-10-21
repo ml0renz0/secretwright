@@ -192,9 +192,7 @@ func (c *Client) kvClient(token string) (*api.Client, error) {
 	if err != nil {
 		return nil, errors.New("could not initialize the KV client")
 	}
-	client.SetHeaders(requestHeaders())
-	client.SetNamespace(c.namespace)
-	client.SetToken(token)
+	configureRequestClient(client, c.namespace, token)
 	return client, nil
 }
 

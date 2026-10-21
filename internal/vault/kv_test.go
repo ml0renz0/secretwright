@@ -230,9 +230,9 @@ func TestVirtualDirectoriesExposeOnlyImmediateVisibleMountChildren(t *testing.T)
 					return
 				}
 				kvReply(w, map[string]any{"secret": map[string]any{
-					"legacy/":       kvMountMetadata("legacy/", "1"),
-					"secret/":       kvMountMetadata("secret/", "2"),
-					"teams/dev/kv/": kvMountMetadata("teams/dev/kv/", "2"),
+					"legacy/":        kvMountMetadata("legacy/", "1"),
+					"secret/":        kvMountMetadata("secret/", "2"),
+					"teams/dev/kv/":  kvMountMetadata("teams/dev/kv/", "2"),
 					"teams/prod/kv/": kvMountMetadata("teams/prod/kv/", "2"),
 				}})
 			})
@@ -533,9 +533,18 @@ func TestKVOperationsWithoutATokenDoNotContactVault(t *testing.T) {
 	})
 	operations := []func() error{
 		func() error { _, err := client.Mounts(context.Background(), ""); return err },
-		func() error { _, err := client.List(context.Background(), "", "/secret/app", vault.KVOptions{}); return err },
-		func() error { _, err := client.Read(context.Background(), "", "/secret/app", vault.KVOptions{}); return err },
-		func() error { _, err := client.ChangeDir(context.Background(), "", "/secret/app", vault.KVOptions{}); return err },
+		func() error {
+			_, err := client.List(context.Background(), "", "/secret/app", vault.KVOptions{})
+			return err
+		},
+		func() error {
+			_, err := client.Read(context.Background(), "", "/secret/app", vault.KVOptions{})
+			return err
+		},
+		func() error {
+			_, err := client.ChangeDir(context.Background(), "", "/secret/app", vault.KVOptions{})
+			return err
+		},
 	}
 	for _, operation := range operations {
 		if err := operation(); !errors.Is(err, vault.ErrUnauthenticated) {
@@ -668,5 +677,32 @@ func TestKVReadNeverTreatsHTTP404WithDataOrWarningsAsSuccess(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMountCatalogDoesNotHideUnsupportedKVVersions(t *testing.T) {
+	client := kvTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		kvReply(w, map[string]any{"secret": map[string]any{
+			"known/":  kvMountMetadata("known/", "1"),
+			"future/": kvMountMetadata("future/", "3"),
+		}})
+	})
+	got, err := client.Mounts(context.Background(), "selected-token")
+	if got != nil || !errors.Is(err, vault.ErrNotKV) {
+		t.Errorf("an unsupported KV version was silently omitted from the catalog: %v", err)
+	}
+}
+
+func TestMountCatalogIgnoresNonKVVersionOptions(t *testing.T) {
+	client := kvTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		kvReply(w, map[string]any{"secret": map[string]any{
+			"known/": kvMountMetadata("known/", "1"),
+			"pki/":   map[string]any{"type": "pki", "options": map[string]any{"version": "unsupported-for-KV"}},
+		}})
+	})
+	got, err := client.Mounts(context.Background(), "selected-token")
+	want := []vault.Mount{{Path: "known/", Version: 1}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("non-KV options affected the visible KV catalog: %v", err)
 	}
 }

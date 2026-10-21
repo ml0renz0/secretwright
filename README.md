@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00 y F01 están integradas**: base Go, consulta de estado, comprobación de tokens, opciones de conexión y laboratorio de pruebas. **F02 está en desarrollo** y añade lectura y navegación KV v1/v2. La escritura, la shell interactiva, los blueprints y la rotación pertenecen a fases posteriores.
+**F00 y F01 están integradas**: base Go, consulta de estado, comprobación de tokens, opciones de conexión y laboratorio de pruebas. **F02 añade lectura y navegación KV v1/v2** en la [PR #3](https://github.com/ml0renz0/secretwright/pull/3), pendiente de merge. La escritura, la shell interactiva, los blueprints y la rotación pertenecen a fases posteriores.
 
 Las consultas usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos de lectura KV utilizan el token seleccionado sin exigir una autoinspección previa. Las operaciones disponibles son de solo lectura.
 
@@ -125,7 +125,7 @@ El cliente oficial también valida la configuración de entorno. Un `VAULT_CLIEN
 
 La verificación TLS es obligatoria: `VAULT_SKIP_VERIFY=true` se rechaza. Para una CA interna, proporciona su certificado. El laboratorio utiliza HTTP únicamente en la interfaz local.
 
-Las cabeceras heredadas de `VAULT_HEADERS` no se envían, aunque el cliente oficial valida su formato JSON. `status` continúa sin enviar tokens después de una comprobación de autenticación. Ninguna de estas consultas sigue redirecciones ni hace reintentos automáticos.
+Las cabeceras heredadas de `VAULT_HEADERS` no se envían, aunque el cliente oficial valida su formato JSON. `VAULT_WRAP_TTL` tampoco activa el encapsulado de respuestas. `status` continúa sin enviar tokens después de una comprobación de autenticación. Ninguna de estas consultas sigue redirecciones ni hace reintentos automáticos.
 
 ## Desarrollo y pruebas
 

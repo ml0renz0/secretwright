@@ -21,14 +21,14 @@ import (
 )
 
 type kvIntegrationFixture struct {
-	admin        *api.Client
-	v1           string
-	v2           string
-	nested       string
-	parent       string
-	scopedToken  string
-	readToken    string
-	listToken    string
+	admin       *api.Client
+	v1          string
+	v2          string
+	nested      string
+	parent      string
+	scopedToken string
+	readToken   string
+	listToken   string
 }
 
 func prepareKVIntegrationFixture(t *testing.T) kvIntegrationFixture {

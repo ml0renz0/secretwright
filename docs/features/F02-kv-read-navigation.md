@@ -71,7 +71,7 @@ La lectura KV v1 utiliza la ruta del montaje y la clave. En KV v2 se consulta `d
 | `3` | La ruta o el secreto no existe, incluida una versión actual borrada. |
 | `1` | Configuración o ruta inválida, respuesta malformada, motor no admitido, transporte, timeout o error de salida. |
 
-Los códigos y resultados de `status` y `auth check` se conservan. Los errores no reproducen tokens, valores de secretos, rutas solicitadas ni cuerpos de error arbitrarios del servidor.
+Los códigos y resultados de `status` y `auth check` se conservan. Los errores no reproducen tokens, valores de secretos, rutas solicitadas ni cuerpos de error arbitrarios del servidor. El cliente desactiva el encapsulado de respuestas incluso si se hereda `VAULT_WRAP_TTL`, para mantener el contrato de datos de cada comando.
 
 ## Pruebas de aceptación
 
