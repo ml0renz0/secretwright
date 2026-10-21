@@ -13,6 +13,7 @@ fmt-check:
 	@unformatted="$$($(GOFMT) -l $$(find cmd internal -type f -name '*.go'))" || exit $$?; \
 	test -z "$$unformatted" || { \
 		printf '%s\n' "$$unformatted"; \
+		$(GOFMT) -d $$(find cmd internal -type f -name '*.go'); \
 		echo 'Run make fmt to format Go sources.' >&2; exit 1; \
 	}
 
