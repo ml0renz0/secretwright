@@ -473,6 +473,8 @@ func TestMalformedMutationResponseIsNotRetried(t *testing.T) {
 func TestWriteTimeoutBoundsDiscoveryAndMutationTogether(t *testing.T) {
 	timeout := 100 * time.Millisecond
 	var writes atomic.Int32
+	releaseHandler := make(chan struct{})
+	defer close(releaseHandler)
 	client := kvTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/sys/internal/ui/mounts/secret/app" {
 			select {
@@ -483,7 +485,14 @@ func TestWriteTimeoutBoundsDiscoveryAndMutationTogether(t *testing.T) {
 			return
 		}
 		writes.Add(1)
-		<-r.Context().Done()
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Error("timed mutation request body could not be consumed")
+			return
+		}
+		select {
+		case <-r.Context().Done():
+		case <-releaseHandler:
+		}
 	}, vault.Options{Timeout: &timeout})
 	started := time.Now()
 	_, err := client.Put(context.Background(), "selected-token", "/secret/app", map[string]any{"value": "fixture-secret-value"}, vault.WriteOptions{})
