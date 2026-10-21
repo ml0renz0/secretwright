@@ -137,6 +137,11 @@ func TestIntegrationKVWritesCASAndVersionLifecycle(t *testing.T) {
 		if err != nil || !reflect.DeepEqual(historical, first) {
 			t.Fatal("historical KV v2 read returned the wrong revision")
 		}
+		if _, err := fixture.admin.Logical().WriteWithContext(ctx, fixture.v2+"metadata/allowed/f03-history", map[string]any{
+			"custom_metadata": map[string]any{"private": "private-f03-custom-metadata"},
+		}); err != nil {
+			t.Fatal("could not provision private lifecycle metadata")
+		}
 		history, err := client.Versions(ctx, writer, target, vault.KVOptions{})
 		if err != nil || history.CurrentVersion != 2 || len(history.Versions) != 2 || history.Versions[0].Version != 1 || history.Versions[1].Version != 2 || history.Versions[0].CreatedTime == "" {
 			t.Fatal("KV v2 version history was not sorted or complete")
