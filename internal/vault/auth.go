@@ -8,9 +8,9 @@ import (
 	"github.com/hashicorp/vault/api"
 )
 
-// ErrUnauthenticated means that lookup-self could not confirm authentication.
-// A 403 may also mean a valid token lacks permission to inspect itself.
-var ErrUnauthenticated = errors.New("Vault authentication could not be confirmed; provide a token with lookup-self permission")
+// ErrUnauthenticated means a token is missing or lookup-self could not confirm
+// authentication. A 403 may mean a valid token cannot inspect itself.
+var ErrUnauthenticated = errors.New("Vault authentication could not be confirmed; provide a token with the required permissions")
 
 // AuthStatus exposes only the explicitly supported, nonsensitive token metadata.
 type AuthStatus struct {
