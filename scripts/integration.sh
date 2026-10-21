@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Development-only fixture. No existing Vault instance is modified.
 set -euo pipefail
+umask 077
 
 cd "$(dirname "$0")/.."
 
@@ -288,4 +289,212 @@ for path, version in [('f02-smoke-v1/', 1), ('f02-smoke-v2/', 2), ('f02-smoke-pa
     if not any(item.get('path') == path and item.get('version') == version for item in outputs['kv-mounts']):
         raise SystemExit('KV smoke omitted a mount or engine version.')
 print('CLI KV smoke passed: v1/v2, nested mounts, navigation and access denial.')
+PY
+
+# Keep mutation inputs, expected values and every captured result private. The
+# writer has access only to this new fixture; partial moves use an extra exact
+# deny on source-version deletion, without granting administration or self-read.
+python3 - "$fixture_dir" <<'PY'
+from pathlib import Path
+import json
+import os
+import secrets
+import sys
+import urllib.error
+import urllib.request
+
+fixture = Path(sys.argv[1])
+address = os.environ['VAULT_ADDR']
+root_token = (fixture / 'root-token').read_text().strip()
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+def request(path, payload):
+    message = urllib.request.Request(address + '/v1/' + path, data=json.dumps(payload).encode(), method='POST')
+    message.add_header('X-Vault-Token', root_token)
+    message.add_header('Content-Type', 'application/json')
+    with opener.open(message, timeout=5) as response:
+        content = response.read()
+        return json.loads(content) if content else None
+
+def private_json(name, value):
+    descriptor = os.open(fixture / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, 'w') as target:
+        json.dump(value, target)
+
+def private_token(name, value):
+    descriptor = os.open(fixture / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, 'w') as target:
+        target.write(value)
+
+try:
+    policy = []
+    for mount, version in [('f03-smoke-v1', 1), ('f03-smoke-v2', 2)]:
+        request('sys/mounts/' + mount, {'type': 'kv', 'options': {'version': str(version)}})
+        if version == 1:
+            policy.append('path ' + json.dumps(mount + '/allowed/*') + ' { capabilities = ["create","read","update","delete","list"] }')
+        else:
+            policy.append('path ' + json.dumps(mount + '/data/allowed/*') + ' { capabilities = ["create","read","update","delete"] }')
+            policy.append('path ' + json.dumps(mount + '/metadata/allowed/*') + ' { capabilities = ["read","list"] }')
+            for operation in ['delete', 'undelete', 'destroy']:
+                policy.append('path ' + json.dumps(mount + '/' + operation + '/allowed/*') + ' { capabilities = ["update"] }')
+    for policy_name, token_file, extra in [
+        ('f03-smoke-write', 'kv-write-token', ''),
+        ('f03-smoke-partial', 'kv-partial-token', 'path "f03-smoke-v2/delete/allowed/partial-source" { capabilities = ["deny"] }'),
+    ]:
+        request('sys/policies/acl/' + policy_name, {'policy': '\n'.join(policy + [extra])})
+        response = request('auth/token/create', {'policies': [policy_name], 'no_default_policy': True, 'ttl': '2m', 'display_name': 'secretwright-f03-smoke'})
+        private_token(token_file, response['auth']['client_token'])
+    for name in ['first', 'second']:
+        private_json('f03-input-' + name + '.json', {
+            'value': 'private-f03-smoke-' + secrets.token_hex(16),
+            'large': 9007199254740993,
+            'data': {'nested': 'private-f03-nested-' + secrets.token_hex(16)},
+        })
+except (OSError, ValueError, TypeError, KeyError, urllib.error.URLError):
+    raise SystemExit('Could not prepare the disposable KV mutation smoke fixture.') from None
+PY
+
+./bin/secretwright put --token-file "$fixture_dir/kv-write-token" \
+  /f03-smoke-v2/allowed/history <"$fixture_dir/f03-input-first.json" \
+  >"$fixture_dir/f03-put-stdin.json" 2>"$fixture_dir/f03-put-stdin.err"
+./bin/secretwright put --token-file "$fixture_dir/kv-write-token" \
+  --file "$fixture_dir/f03-input-second.json" --cas 1 /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-put-file.json" 2>"$fixture_dir/f03-put-file.err"
+expect_kv_failure 4 f03-stale-cas ./bin/secretwright put \
+  --token-file "$fixture_dir/kv-write-token" --file "$fixture_dir/f03-input-first.json" \
+  --cas 1 /f03-smoke-v2/allowed/history
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-cat-current.json" 2>"$fixture_dir/f03-cat-current.err"
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" --version 1 /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-cat-historical.json" 2>"$fixture_dir/f03-cat-historical.err"
+./bin/secretwright versions --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-versions-before.json" 2>"$fixture_dir/f03-versions-before.err"
+./bin/secretwright rm --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-rm-latest.json" 2>"$fixture_dir/f03-rm-latest.err"
+expect_kv_failure 3 f03-soft-deleted ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history
+./bin/secretwright undelete --token-file "$fixture_dir/kv-write-token" --versions 2,2 /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-undelete.json" 2>"$fixture_dir/f03-undelete.err"
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-cat-restored.json" 2>"$fixture_dir/f03-cat-restored.err"
+./bin/secretwright rollback --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history 1 \
+  >"$fixture_dir/f03-rollback.json" 2>"$fixture_dir/f03-rollback.err"
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-cat-rollback.json" 2>"$fixture_dir/f03-cat-rollback.err"
+./bin/secretwright destroy --token-file "$fixture_dir/kv-write-token" --versions 1 --force /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-destroy.json" 2>"$fixture_dir/f03-destroy.err"
+expect_kv_failure 3 f03-destroyed ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-write-token" --version 1 /f03-smoke-v2/allowed/history
+./bin/secretwright versions --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/history \
+  >"$fixture_dir/f03-versions-after.json" 2>"$fixture_dir/f03-versions-after.err"
+
+./bin/secretwright put --token-file "$fixture_dir/kv-write-token" --file - \
+  /f03-smoke-v1/allowed/source <"$fixture_dir/f03-input-first.json" \
+  >"$fixture_dir/f03-v1-put.json" 2>"$fixture_dir/f03-v1-put.err"
+./bin/secretwright cp --token-file "$fixture_dir/kv-write-token" \
+  /f03-smoke-v1/allowed/source /f03-smoke-v2/allowed/copied \
+  >"$fixture_dir/f03-copy.json" 2>"$fixture_dir/f03-copy.err"
+expect_kv_failure 1 f03-v1-copy-unforced ./bin/secretwright cp \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/copied /f03-smoke-v1/allowed/copied
+./bin/secretwright cp --token-file "$fixture_dir/kv-write-token" --force \
+  /f03-smoke-v2/allowed/copied /f03-smoke-v1/allowed/copied \
+  >"$fixture_dir/f03-v1-copy.json" 2>"$fixture_dir/f03-v1-copy.err"
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v1/allowed/copied \
+  >"$fixture_dir/f03-cat-v1-copy.json" 2>"$fixture_dir/f03-cat-v1-copy.err"
+expect_kv_failure 1 f03-v1-move-unforced ./bin/secretwright mv \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v1/allowed/source /f03-smoke-v2/allowed/moved
+./bin/secretwright mv --token-file "$fixture_dir/kv-write-token" --force \
+  /f03-smoke-v1/allowed/source /f03-smoke-v2/allowed/moved \
+  >"$fixture_dir/f03-move.json" 2>"$fixture_dir/f03-move.err"
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/moved \
+  >"$fixture_dir/f03-cat-moved.json" 2>"$fixture_dir/f03-cat-moved.err"
+expect_kv_failure 3 f03-moved-source ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v1/allowed/source
+expect_kv_failure 1 f03-v1-rm-unforced ./bin/secretwright rm \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v1/allowed/copied
+./bin/secretwright rm --token-file "$fixture_dir/kv-write-token" --force /f03-smoke-v1/allowed/copied \
+  >"$fixture_dir/f03-v1-rm.json" 2>"$fixture_dir/f03-v1-rm.err"
+expect_kv_failure 3 f03-v1-removed ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v1/allowed/copied
+
+./bin/secretwright put --token-file "$fixture_dir/kv-write-token" --file "$fixture_dir/f03-input-second.json" \
+  /f03-smoke-v2/allowed/partial-source \
+  >"$fixture_dir/f03-partial-put.json" 2>"$fixture_dir/f03-partial-put.err"
+expect_kv_failure 5 f03-partial ./bin/secretwright mv --token-file "$fixture_dir/kv-partial-token" \
+  /f03-smoke-v2/allowed/partial-source /f03-smoke-v2/allowed/partial-destination
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/partial-source \
+  >"$fixture_dir/f03-cat-partial-source.json" 2>"$fixture_dir/f03-cat-partial-source.err"
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/partial-destination \
+  >"$fixture_dir/f03-cat-partial-destination.json" 2>"$fixture_dir/f03-cat-partial-destination.err"
+
+python3 - "$fixture_dir" <<'PY'
+from pathlib import Path
+import json
+import stat
+import sys
+
+fixture = Path(sys.argv[1])
+credentials = [(fixture / name).read_text().strip() for name in ['root-token', 'kv-token', 'kv-write-token', 'kv-partial-token']]
+first = json.loads((fixture / 'f03-input-first.json').read_text())
+second = json.loads((fixture / 'f03-input-second.json').read_text())
+cat_values = {
+    'f03-cat-current': second, 'f03-cat-historical': first,
+    'f03-cat-restored': second, 'f03-cat-rollback': first,
+    'f03-cat-v1-copy': first, 'f03-cat-moved': first,
+    'f03-cat-partial-source': second, 'f03-cat-partial-destination': second,
+}
+failures = {
+    'f03-stale-cas', 'f03-soft-deleted', 'f03-destroyed',
+    'f03-v1-copy-unforced', 'f03-v1-move-unforced', 'f03-moved-source',
+    'f03-v1-rm-unforced', 'f03-v1-removed', 'f03-partial',
+}
+reports = {}
+for output_file in sorted(fixture.glob('f03-*.json')):
+    if stat.S_IMODE(output_file.stat().st_mode) != 0o600:
+        raise SystemExit('KV mutation smoke created a non-private capture.')
+    case = output_file.stem
+    if case.startswith('f03-input-'):
+        continue
+    output = output_file.read_text()
+    error = output_file.with_suffix('.err').read_text()
+    if any(token in output + error for token in credentials):
+        raise SystemExit('KV mutation smoke exposed a credential.')
+    if 'private-f03-' in error or '9007199254740993' in error:
+        raise SystemExit('KV mutation diagnostics exposed a secret value.')
+    if case in failures:
+        if output or not error:
+            raise SystemExit('KV mutation failure produced unexpected output.')
+        continue
+    try:
+        report = json.loads(output)
+    except (ValueError, TypeError):
+        raise SystemExit('KV mutation smoke did not produce valid JSON.') from None
+    if error:
+        raise SystemExit('KV mutation success emitted unexpected diagnostics.')
+    if case in cat_values:
+        if report != cat_values[case] or report.get('large') != 9007199254740993:
+            raise SystemExit('KV mutation readback changed values or numeric precision.')
+    else:
+        if 'private-f03-' in output or '9007199254740993' in output:
+            raise SystemExit('KV mutation report exposed a secret value.')
+        reports[case] = report
+
+if reports['f03-put-stdin'] != {'path': '/f03-smoke-v2/allowed/history', 'kv_version': 2, 'version': 1}:
+    raise SystemExit('KV mutation stdin put report was incorrect.')
+if reports['f03-put-file'].get('version') != 2 or reports['f03-rollback'].get('version') != 3:
+    raise SystemExit('KV mutation CAS or rollback revision was incorrect.')
+if reports['f03-undelete'].get('versions') != [2] or reports['f03-destroy'].get('versions') != [1]:
+    raise SystemExit('KV mutation version selection was not canonical.')
+for case, current, destroyed in [('f03-versions-before', 2, False), ('f03-versions-after', 3, True)]:
+    history = reports[case]
+    if set(history) != {'path', 'current_version', 'oldest_version', 'versions'} or history['current_version'] != current:
+        raise SystemExit('KV mutation history projection was incorrect.')
+    versions = history['versions']
+    if [item.get('version') for item in versions] != list(range(1, current + 1)) or versions[0].get('destroyed') is not destroyed:
+        raise SystemExit('KV mutation version history was not preserved.')
+    if any(set(item) != {'version', 'created_time', 'deletion_time', 'destroyed'} for item in versions):
+        raise SystemExit('KV mutation history included unexpected metadata.')
+if reports['f03-copy'].get('source_deleted') is not False or reports['f03-move'].get('source_deleted') is not True:
+    raise SystemExit('KV mutation copy/move report was incorrect.')
+print('CLI KV mutation smoke passed: stdin/file, CAS, version lifecycle and partial move.')
 PY
