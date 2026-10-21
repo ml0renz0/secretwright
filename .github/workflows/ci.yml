@@ -1,0 +1,39 @@
+name: F00 bootstrap validation
+
+on:
+  push:
+    branches: [codex/f00-bootstrap]
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Resolve and format bootstrap
+        run: |
+          gofmt -w cmd internal
+          go mod tidy
+      - name: Export reproducible source metadata
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          paths = [Path('go.mod'), Path('go.sum')]
+          paths += sorted(Path('cmd').rglob('*.go'))
+          paths += sorted(Path('internal').rglob('*.go'))
+          print('SECRETWRIGHT_BOOTSTRAP=' + json.dumps({str(p):p.read_text() for p in paths if p.is_file()}))
+          PY
+      - run: go mod verify
+      - run: make check
+      - run: make integration-local
