@@ -20,14 +20,23 @@ Usage:
   secretwright version              Show the build version
   secretwright status [options]     Print Vault health as JSON (no token required)
   secretwright auth check [options] Check token authentication as JSON
+  secretwright mounts [options]    List visible KV mounts as JSON
+  secretwright ls [options] [PATH] List children of a logical Vault directory
+  secretwright cat [options] PATH  Print the requested secret values as JSON
+  secretwright cd [options] [PATH] Validate and resolve a logical directory
 
-Network options (after status or auth check):
+Network options (after the command, before a path):
   --address URL           Override VAULT_ADDR and VAULT_AGENT_ADDR
   --namespace NAME        Override VAULT_NAMESPACE; an empty value selects root
   --timeout DURATION      Request timeout, for example 5s or 1m
 
-Authentication option (after auth check only):
+Authentication option (auth check and KV commands):
   --token-file PATH       Read a token from this file instead of VAULT_TOKEN
+
+KV path options (ls, cat and cd only):
+  --cwd PATH             Resolve relative paths from this logical directory
+  --mount PATH           Explicit KV mount; requires --kv-version
+  --kv-version 1|2       Explicit KV version; requires --mount
 
 Configuration:
   VAULT_ADDR               Vault URL (default: https://127.0.0.1:8200)
@@ -39,14 +48,18 @@ Configuration:
   VAULT_TLS_SERVER_NAME    TLS server name override
   VAULT_NAMESPACE          Vault namespace
   VAULT_CLIENT_TIMEOUT     Request timeout (default: 10s)
-  VAULT_TOKEN              Token used only by auth check
+  VAULT_TOKEN              Token used for authenticated operations
 
 Status exit codes: 0 initialized and unsealed; 2 sealed or uninitialized;
 1 configuration, request, or output error.
 Auth check exit codes: 0 authenticated; 2 no token or lookup-self denied;
 1 configuration, request, or output error.
+KV exit codes: 0 success; 2 no token or permission denied; 3 path not found;
+1 configuration, request, or output error.
 
 Tokens are not accepted as command-line arguments or saved to disk.
+cat prints requested secret values to standard output.
+cd does not retain a directory between invocations; use --cwd explicitly.
 The interactive shell and declarative operations are planned.
 `
 
@@ -90,6 +103,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		return 0
 	case "status":
 		return status(ctx, args[1:], stdout, stderr)
+	case "mounts", "ls", "cat", "cd":
+		return kvCommand(ctx, args[0], args[1:], stdout, stderr)
 	case "auth":
 		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
 			return writeUsage(stdout, stderr, authUsage)
