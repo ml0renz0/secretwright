@@ -15,6 +15,8 @@ var errKV2Number = fmt.Errorf("%w: KV v2 cannot preserve this JSON number; encod
 // validateKV2Numbers returns the exact JSON object checked for the KV v2
 // backend's float64 read conversion. Sending this normalized object also keeps
 // custom MarshalJSON implementations from changing values after validation.
+// Vault 2.2.0 pins KV plugin 0.27.0; its read conversion is documented here:
+// https://github.com/hashicorp/vault-plugin-secrets-kv/blob/v0.27.0/path_data.go#L262
 func validateKV2Numbers(data map[string]any) (map[string]any, error) {
 	encoded, err := json.Marshal(data)
 	if err != nil {
