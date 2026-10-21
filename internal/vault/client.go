@@ -35,7 +35,11 @@ func NewFromEnvironment() (*Client, error) {
 	if config.Error != nil {
 		return nil, errors.New("invalid Vault client configuration; check the VAULT_* environment variables")
 	}
-	address, err := url.Parse(config.Address)
+	effectiveAddress := config.Address
+	if config.AgentAddress != "" {
+		effectiveAddress = config.AgentAddress
+	}
+	address, err := url.Parse(effectiveAddress)
 	if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" {
 		return nil, errors.New("Vault address must be an absolute http or https URL")
 	}
@@ -54,6 +58,9 @@ func NewFromEnvironment() (*Client, error) {
 	if err != nil {
 		return nil, errors.New("could not initialize the Vault client")
 	}
+	headers := make(http.Header)
+	headers.Set("X-Vault-Request", "true")
+	client.SetHeaders(headers)
 	client.SetToken("")
 	client.SetNamespace(os.Getenv("VAULT_NAMESPACE"))
 	return &Client{api: client}, nil

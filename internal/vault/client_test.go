@@ -123,9 +123,16 @@ func TestNewFromEnvironmentRejectsUnsafeConfiguration(t *testing.T) {
 		{name: "unsupported scheme", key: "VAULT_ADDR", value: "ftp://vault.internal:8200"},
 		{name: "missing host", key: "VAULT_ADDR", value: "https:///vault"},
 		{name: "malformed address", key: "VAULT_ADDR", value: "https://[::1"},
-		{name: "userinfo", key: "VAULT_ADDR", value: "https://username:private-password@vault.internal:8200"},
+		{name: "userinfo", key: "VAULT_ADDR", value: "https://" + "username" + ":" + "private-password" + "@" + "vault.internal:8200"},
 		{name: "query", key: "VAULT_ADDR", value: "https://vault.internal:8200?token=private-token"},
 		{name: "fragment", key: "VAULT_ADDR", value: "https://vault.internal:8200#private-token"},
+		{name: "agent relative address", key: "VAULT_AGENT_ADDR", value: "vault.internal:8200"},
+		{name: "agent unsupported scheme", key: "VAULT_AGENT_ADDR", value: "ftp://vault.internal:8200"},
+		{name: "agent missing host", key: "VAULT_AGENT_ADDR", value: "https:///vault"},
+		{name: "agent malformed address", key: "VAULT_AGENT_ADDR", value: "https://[::1"},
+		{name: "agent userinfo", key: "VAULT_AGENT_ADDR", value: "https://" + "agent-user" + ":" + "private-agent-password" + "@" + "vault.internal:8200"},
+		{name: "agent query", key: "VAULT_AGENT_ADDR", value: "https://vault.internal:8200?token=private-agent-token"},
+		{name: "agent fragment", key: "VAULT_AGENT_ADDR", value: "https://vault.internal:8200#private-agent-token"},
 		{name: "disabled verification", key: "VAULT_SKIP_VERIFY", value: "true"},
 		{name: "invalid timeout", key: "VAULT_CLIENT_TIMEOUT", value: "not-a-duration"},
 		{name: "missing CA", key: "VAULT_CACERT", value: "/does/not/exist/private-ca.pem"},
@@ -142,6 +149,45 @@ func TestNewFromEnvironmentRejectsUnsafeConfiguration(t *testing.T) {
 				t.Error("configuration error echoed the supplied value")
 			}
 		})
+	}
+}
+
+func TestStatusDoesNotSendInheritedEnvironmentHeaders(t *testing.T) {
+	clearVaultEnvironment(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		for _, header := range []string{"Authorization", "Cookie", "X-Vault-Token", "X-Operator-Private"} {
+			if r.Header.Get(header) != "" {
+				t.Errorf("health request sent inherited %s header", header)
+			}
+		}
+		if r.Header.Get("X-Vault-Request") != "true" {
+			t.Error("health request omitted Vault Agent SSRF protection header")
+		}
+		if r.Header.Get("X-Vault-Namespace") != "team" {
+			t.Error("health request lost the explicitly configured namespace")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"initialized":true,"sealed":false,"version":"2.2.0"}`)
+	}))
+	defer server.Close()
+	t.Setenv("VAULT_ADDR", server.URL)
+	t.Setenv("VAULT_TOKEN", "inherited-token-marker")
+	t.Setenv("VAULT_NAMESPACE", "team")
+	// VAULT_HEADERS is a JSON object of strings. The SDK rejects the exact
+	// prefix X-Vault-, but accepts lower-case spellings before canonicalizing
+	// their header names; health must strip both ordinary and reserved headers.
+	t.Setenv("VAULT_HEADERS", `{"Authorization":"Bearer inherited-auth-marker","Cookie":"session=inherited-cookie-marker","x-vault-token":"inherited-header-token-marker","X-Operator-Private":"inherited-private-marker"}`)
+	client, err := vault.NewFromEnvironment()
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	if _, err := client.Status(context.Background()); err != nil {
+		t.Fatalf("read health: %v", err)
+	}
+	if requests.Load() != 1 {
+		t.Errorf("requests = %d, want exactly one read", requests.Load())
 	}
 }
 

@@ -20,6 +20,7 @@ Usage:
 
 Configuration:
   VAULT_ADDR              Vault URL (default: https://127.0.0.1:8200)
+  VAULT_AGENT_ADDR        Optional Vault Agent URL (takes precedence over VAULT_ADDR)
   VAULT_CACERT             Trusted CA certificate file
   VAULT_CAPATH             Trusted CA certificate directory
   VAULT_CLIENT_CERT        TLS client certificate file

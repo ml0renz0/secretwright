@@ -41,6 +41,7 @@ La conexión utiliza las variables estándar de Vault. Configura explícitamente
 | Variable | Uso |
 | --- | --- |
 | `VAULT_ADDR` | Dirección HTTP o HTTPS del servidor Vault. |
+| `VAULT_AGENT_ADDR` | Dirección opcional de Vault Agent; tiene prioridad sobre `VAULT_ADDR`. |
 | `VAULT_CACERT` | Archivo PEM de la CA que permite verificar el servidor. |
 | `VAULT_CAPATH` | Directorio de certificados de CA. |
 | `VAULT_CLIENT_CERT` | Certificado PEM de cliente para TLS mutuo. |
@@ -49,6 +50,8 @@ La conexión utiliza las variables estándar de Vault. Configura explícitamente
 | `VAULT_NAMESPACE` | Namespace de Vault, cuando el servidor lo admita. |
 
 La verificación TLS está activada. Para una CA interna, proporciona su certificado en lugar de desactivar la verificación. El modo de desarrollo del laboratorio utiliza HTTP únicamente en la interfaz local.
+
+La consulta de salud no envía `VAULT_TOKEN` ni las cabeceras heredadas de `VAULT_HEADERS`. Tiene un límite de diez segundos y no sigue redirecciones.
 
 ## Desarrollo y pruebas
 

@@ -7,7 +7,7 @@ build:
 	CGO_ENABLED=0 $(GO) build -trimpath -o bin/secretwright ./cmd/secretwright
 
 fmt:
-	$(GO) fmt ./...
+	$(GOFMT) -w $$(find cmd internal -type f -name '*.go')
 
 fmt-check:
 	@unformatted="$$($(GOFMT) -l $$(find cmd internal -type f -name '*.go'))" || exit $$?; \
