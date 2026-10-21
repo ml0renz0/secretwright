@@ -275,12 +275,16 @@ func writeSnapshot(ctx context.Context, client *api.Client, target kvTarget, dat
 			return WriteResult{}, ErrUnsupportedOperation
 		}
 	} else {
+		normalized, err := validateKV2Numbers(data)
+		if err != nil {
+			return WriteResult{}, err
+		}
 		comparison := 0
 		if cas != nil {
 			comparison = *cas
 		}
 		physical = target.mount.Path + "data/" + target.key
-		body = map[string]any{"data": data, "options": map[string]any{"cas": comparison}}
+		body = map[string]any{"data": normalized, "options": map[string]any{"cas": comparison}}
 	}
 	secret, err := performMutation(ctx, client, http.MethodPost, physical, body)
 	if err != nil {
