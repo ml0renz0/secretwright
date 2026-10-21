@@ -115,9 +115,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, errors.New("could not initialize the Vault client")
 	}
-	client.SetHeaders(requestHeaders())
-	client.SetToken("")
-	client.SetNamespace(namespace)
+	configureRequestClient(client, namespace, "")
 	// The SDK's Clone omits DisableRedirects. Use a fresh configuration for
 	// authenticated operations; only the immutable, concurrent-safe HTTP client
 	// and transport are shared. No mutex-bearing Config value is copied.

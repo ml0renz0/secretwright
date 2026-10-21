@@ -35,10 +35,15 @@ func NewFromEnvironment() (*Client, error) {
 	return New(Options{})
 }
 
-func requestHeaders() http.Header {
+// Configure every SDK client explicitly: clearing inherited headers alone does
+// not disable the SDK's VAULT_WRAP_TTL lookup when it builds a request.
+func configureRequestClient(client *api.Client, namespace, token string) {
 	headers := make(http.Header)
 	headers.Set("X-Vault-Request", "true")
-	return headers
+	client.SetHeaders(headers)
+	client.SetNamespace(namespace)
+	client.SetToken(token)
+	client.SetWrappingLookupFunc(func(string, string) string { return "" })
 }
 
 // Status retrieves Vault health without reading or changing secrets. The
