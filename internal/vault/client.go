@@ -1,12 +1,11 @@
-// Package vault implements read-only Vault operations for the F00 bootstrap.
+// Package vault implements Vault operations independently of the command interface.
 package vault
 
 import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
-	"os"
+	"time"
 
 	"github.com/hashicorp/vault/api"
 )
@@ -14,7 +13,10 @@ import (
 // Client wraps the official Vault API client. Domain operations belong here,
 // independently of their eventual interactive or batch interface.
 type Client struct {
-	api *api.Client
+	api       *api.Client
+	namespace string
+	timeout   time.Duration
+	newConfig func() *api.Config
 }
 
 // Status is the deliberately small, stable public health report.
@@ -27,59 +29,26 @@ type Status struct {
 	ClusterID   string `json:"cluster_id,omitempty"`
 }
 
-// NewFromEnvironment reads the official client's standard environment settings.
-// Health requires no authentication, so inherited tokens are never sent. TLS
-// certificate verification cannot be disabled by VAULT_SKIP_VERIFY.
+// NewFromEnvironment reads supported environment settings without selecting a
+// token. Health requires no authentication, so inherited tokens are never sent.
 func NewFromEnvironment() (*Client, error) {
-	config := api.DefaultConfig()
-	if config.Error != nil {
-		return nil, errors.New("invalid Vault client configuration; check the VAULT_* environment variables")
-	}
-	effectiveAddress := config.Address
-	if config.AgentAddress != "" {
-		effectiveAddress = config.AgentAddress
-	}
-	address, err := url.Parse(effectiveAddress)
-	if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" {
-		return nil, errors.New("Vault address must be an absolute http or https URL")
-	}
-	if address.User != nil || address.RawQuery != "" || address.Fragment != "" {
-		return nil, errors.New("Vault address must not contain credentials, a query, or a fragment")
-	}
-	transport, ok := config.HttpClient.Transport.(*http.Transport)
-	if !ok || transport.TLSClientConfig == nil || transport.TLSClientConfig.InsecureSkipVerify {
-		return nil, errors.New("TLS verification is required; unset VAULT_SKIP_VERIFY and configure a trusted CA")
-	}
-	// A status probe is bounded by its caller's context and needs no retries or
-	// redirects. In particular, never forward client credentials to a redirect.
-	config.MaxRetries = 0
-	config.DisableRedirects = true
-	client, err := api.NewClient(config)
-	if err != nil {
-		return nil, errors.New("could not initialize the Vault client")
-	}
+	return New(Options{})
+}
+
+func requestHeaders() http.Header {
 	headers := make(http.Header)
 	headers.Set("X-Vault-Request", "true")
-	client.SetHeaders(headers)
-	client.SetToken("")
-	client.SetNamespace(os.Getenv("VAULT_NAMESPACE"))
-	return &Client{api: client}, nil
+	return headers
 }
 
 // Status retrieves Vault health without reading or changing secrets. The
 // official SDK decodes sealed and uninitialized responses as health reports.
 func (c *Client) Status(ctx context.Context) (Status, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 	health, err := c.api.Sys().HealthWithContext(ctx)
 	if err != nil {
-		// Server responses and URLs can contain sensitive data. Keep diagnostics
-		// bounded instead of returning arbitrary upstream error bodies.
-		if errors.Is(err, context.Canceled) {
-			return Status{}, context.Canceled
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			return Status{}, context.DeadlineExceeded
-		}
-		return Status{}, errors.New("could not read Vault health; check the address, connectivity, and TLS configuration")
+		return Status{}, safeRequestError(err, false)
 	}
 	return Status{
 		Initialized: health.Initialized,
@@ -89,4 +58,19 @@ func (c *Client) Status(ctx context.Context) (Status, error) {
 		ClusterName: health.ClusterName,
 		ClusterID:   health.ClusterID,
 	}, nil
+}
+
+// Never propagate upstream error bodies, URLs or headers into public errors.
+func safeRequestError(err error, authentication bool) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	var responseError *api.ResponseError
+	if authentication && errors.As(err, &responseError) && (responseError.StatusCode == http.StatusUnauthorized || responseError.StatusCode == http.StatusForbidden) {
+		return ErrUnauthenticated
+	}
+	return errors.New("Vault request failed; check the address, connectivity, and TLS configuration")
 }

@@ -80,9 +80,11 @@ Configura explícitamente la dirección del servidor; el valor predeterminado es
 
 `--address` tiene prioridad sobre ambas variables de dirección. `--namespace` tiene prioridad sobre `VAULT_NAMESPACE`, incluso con un valor vacío para seleccionar el namespace raíz. El timeout se resuelve en este orden: `--timeout`, `VAULT_CLIENT_TIMEOUT`, diez segundos. Para la confianza CA se priorizan el archivo, el contenido PEM y el directorio, en ese orden.
 
+El cliente oficial también valida la configuración de entorno. Un `VAULT_CLIENT_TIMEOUT` malformado debe corregirse aunque se use `--timeout`; la configuración TLS del entorno también debe ser válida.
+
 La verificación TLS es obligatoria: `VAULT_SKIP_VERIFY=true` se rechaza. Para una CA interna, proporciona su certificado. El laboratorio utiliza HTTP únicamente en la interfaz local.
 
-Las cabeceras heredadas de `VAULT_HEADERS` se ignoran. `status` continúa sin enviar tokens después de una comprobación de autenticación. Ninguna de estas consultas sigue redirecciones ni hace reintentos automáticos.
+Las cabeceras heredadas de `VAULT_HEADERS` no se envían, aunque el cliente oficial valida su formato JSON. `status` continúa sin enviar tokens después de una comprobación de autenticación. Ninguna de estas consultas sigue redirecciones ni hace reintentos automáticos.
 
 ## Desarrollo y pruebas
 

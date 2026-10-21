@@ -36,7 +36,7 @@ func TestConnectionOptionsOverrideEnvironment(t *testing.T) {
 			t.Setenv("VAULT_ADDR", "not-a-valid-address")
 			t.Setenv("VAULT_AGENT_ADDR", "not-a-valid-agent-address")
 			t.Setenv("VAULT_NAMESPACE", "inherited/team")
-			t.Setenv("VAULT_CLIENT_TIMEOUT", "not-a-valid-duration")
+			t.Setenv("VAULT_CLIENT_TIMEOUT", "5s")
 			address := server.URL
 			timeout := time.Second
 			client, err := vault.New(vault.Options{Address: &address, Namespace: &test.namespace, Timeout: &timeout})
@@ -47,6 +47,19 @@ func TestConnectionOptionsOverrideEnvironment(t *testing.T) {
 				t.Fatalf("read selected server: %v", err)
 			}
 		})
+	}
+}
+
+func TestMalformedEnvironmentTimeoutCannotBeOverridden(t *testing.T) {
+	clearVaultEnvironment(t)
+	t.Setenv("VAULT_CLIENT_TIMEOUT", "invalid-private-marker")
+	timeout := time.Second
+	client, err := vault.New(vault.Options{Timeout: &timeout})
+	if err == nil || client != nil {
+		t.Fatal("malformed SDK environment configuration was accepted despite an explicit timeout")
+	}
+	if strings.Contains(err.Error(), "invalid-private-marker") {
+		t.Error("configuration error echoed a malformed environment value")
 	}
 }
 

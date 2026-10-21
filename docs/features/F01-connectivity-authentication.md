@@ -24,6 +24,8 @@ Las opciones van después del comando o subcomando. La ayuda, la versión, `stat
 
 Un valor explícito de dirección anula también `VAULT_AGENT_ADDR`. `--namespace ''` selecciona el namespace raíz aunque el entorno indique otro. Los timeouts tienen formato de duración Go, como `5s` o `1m`, y deben ser positivos. Un contexto cancelado o con un plazo más corto termina antes la operación.
 
+El cliente oficial también valida la configuración de entorno. Un `VAULT_CLIENT_TIMEOUT` malformado debe corregirse aunque se use `--timeout`; la configuración TLS del entorno también debe ser válida. Las opciones prevalecen sobre valores de entorno válidos.
+
 La dirección efectiva debe ser una URL HTTP o HTTPS absoluta con host, sin credenciales, query ni fragmento. Las consultas no siguen redirecciones ni hacen reintentos automáticos.
 
 TLS siempre verifica al servidor. Se conservan `VAULT_CACERT`, `VAULT_CACERT_BYTES` y `VAULT_CAPATH`, con prioridad en ese orden; `VAULT_CLIENT_CERT` y `VAULT_CLIENT_KEY` configuran TLS mutuo y deben suministrarse juntos. `VAULT_TLS_SERVER_NAME` permite indicar el nombre TLS esperado. `VAULT_SKIP_VERIFY=true` se rechaza.
@@ -56,7 +58,7 @@ No se publican token, `id`, `accessor` ni metadatos arbitrarios de la respuesta.
 
 Un `403` puede indicar que un token válido carece de permiso de autoinspección. El resultado no acredita permisos sobre KV ni sobre otros recursos de Vault.
 
-`status` conserva su JSON y códigos de salida: `0` para inicializado y desellado, `2` para sellado o sin inicializar, `1` para errores. Nunca envía un token, tampoco después de llamar a `auth check` en el mismo proceso. Las cabeceras de `VAULT_HEADERS` se ignoran en ambas operaciones; solo se añaden las cabeceras propias necesarias y el token seleccionado para la autoinspección.
+`status` conserva su JSON y códigos de salida: `0` para inicializado y desellado, `2` para sellado o sin inicializar, `1` para errores. Nunca envía un token, tampoco después de llamar a `auth check` en el mismo proceso. Las cabeceras de `VAULT_HEADERS` no se envían en ninguna de las dos operaciones, aunque el cliente oficial valida su formato JSON; solo se añaden las cabeceras propias necesarias y el token seleccionado para la autoinspección.
 
 Los errores no reproducen valores de credenciales, argumentos rechazados, rutas de archivos de token ni cuerpos de error arbitrarios enviados por el servidor.
 
