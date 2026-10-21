@@ -131,6 +131,8 @@ El contrato, las pruebas y la ampliación de CI preceden a la implementación.
 | Permisos | Token con lectura pero sin escritura rechazado; subárbol permitido y subárbol denegado comprobados contra Vault real. |
 | Copia | Copia entre montajes y entre KV v1/v2, sin historial ni metadatos arbitrarios, conservando la precisión de los datos. |
 | Movimiento | Fallo de copia conserva el origen; origen v2 elimina solo su revisión capturada; fallo posterior a la copia devuelve `5` sin borrar el destino. |
+| Revisión concurrente | Una escritura nueva en el origen tras confirmar el destino permanece legible después de mover la revisión capturada. |
+| Respuesta perdida | Sin confirmación del destino no se borra el origen; con destino confirmado y borrado sin confirmar se conserva la copia y se devuelve `5`. |
 | Historial | Proyección ordenada sin valores ni metadatos personalizados. Lectura histórica y rechazo en KV v1. |
 | Recuperación | Borrado reversible, recuperación exacta, destrucción forzada y rollback que crea una versión nueva mediante CAS. |
 | Transporte | No se repiten mutaciones tras timeout, redirección o error; los resultados inciertos se comunican sin exponer datos. |
