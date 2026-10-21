@@ -102,7 +102,11 @@ func TestPutUsesVersionSpecificFullReplacementAndCAS(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var writes atomic.Int32
-			values := map[string]any{"password": "fixture-secret-value", "large": json.Number("9007199254740993123456789"), "data": map[string]any{"enabled": true}}
+			large := json.Number("9007199254740994")
+			if test.version == "1" {
+				large = json.Number("9007199254740993123456789")
+			}
+			values := map[string]any{"password": "fixture-secret-value", "large": large, "data": map[string]any{"enabled": true}}
 			client := kvTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				assertKVWriteCredentials(t, r, "selected-token")
 				switch r.URL.Path {
@@ -251,7 +255,11 @@ func TestCopyCrossMountPreservesExactValuesAndDestinationPolicy(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var writes atomic.Int32
-			values := map[string]any{"value": "fixture-secret-value", "large": json.Number("9007199254740993123456789")}
+			large := json.Number("9007199254740994")
+			if test.destKV == "1" {
+				large = json.Number("9007199254740993123456789")
+			}
+			values := map[string]any{"value": "fixture-secret-value", "large": large}
 			source := "/" + test.sourceMount + "data/app"
 			destination := "/" + test.destMount + "data/copied"
 			sourcePhysical := "/v1/" + test.sourceMount + "data/app"

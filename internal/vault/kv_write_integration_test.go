@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -53,9 +54,10 @@ func newWriteIntegrationClient(t *testing.T) *vault.Client {
 
 func integrationValues(revision string) map[string]any {
 	return map[string]any{
-		"value": "private-f03-value-" + revision,
-		"large": json.Number("9007199254740993"),
-		"data":  map[string]any{"nested": "private-f03-nested-" + revision},
+		"value":    "private-f03-value-" + revision,
+		"large":    json.Number("9007199254740994"),
+		"large_id": "9007199254740993",
+		"data":     map[string]any{"nested": "private-f03-nested-" + revision},
 	}
 }
 
@@ -70,7 +72,7 @@ func requireIntegrationValues(t *testing.T, ctx context.Context, client *vault.C
 func requireSafeMutationReport(t *testing.T, report any, token string) {
 	t.Helper()
 	encoded, err := json.Marshal(report)
-	if err != nil || strings.Contains(string(encoded), token) || strings.Contains(string(encoded), "private-f03-") || strings.Contains(string(encoded), "9007199254740993") {
+	if err != nil || strings.Contains(string(encoded), token) || strings.Contains(string(encoded), "private-f03-") || strings.Contains(string(encoded), "9007199254740993") || strings.Contains(string(encoded), "9007199254740994") {
 		t.Fatal("mutation report exposed a credential or secret value")
 	}
 }
@@ -85,6 +87,7 @@ func TestIntegrationKVWritesCASAndVersionLifecycle(t *testing.T) {
 	t.Run("KV v1 replacement and forced deletion", func(t *testing.T) {
 		target := "/" + fixture.v1 + "allowed/f03-value"
 		first, second := integrationValues("v1-first"), integrationValues("v1-second")
+		first["large"], second["large"] = json.Number("9007199254740993"), json.Number("9007199254740993")
 		report, err := client.Put(ctx, writer, target, first, vault.WriteOptions{})
 		if err != nil || report.KVVersion != 1 || report.Version != 0 || report.Path != target {
 			t.Fatal("KV v1 put did not confirm its logical destination")
@@ -237,6 +240,80 @@ func TestIntegrationKVWritesCASAndVersionLifecycle(t *testing.T) {
 			t.Fatal("forced KV v1 move did not delete its source")
 		}
 	})
+}
+
+func TestIntegrationKV2RejectsLossyNumbersAndPreservesMoveSource(t *testing.T) {
+	fixture := prepareKVIntegrationFixture(t)
+	writer := createKVIntegrationPolicyToken(t, fixture.admin, fmt.Sprintf("secretwright-f03-numeric-%d", time.Now().UnixNano()), integrationWritePolicy(fixture))
+	client := newWriteIntegrationClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	upstream, err := url.Parse(os.Getenv("VAULT_ADDR"))
+	if err != nil {
+		t.Fatal("invalid disposable fixture address")
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	proxy.ErrorLog = log.New(io.Discard, "", 0)
+	var destinationWrites atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/"+fixture.v2+"data/") && (r.Method == http.MethodPost || r.Method == http.MethodPut) {
+			destinationWrites.Add(1)
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	proxyAddress := server.URL
+	proxied, err := vault.New(vault.Options{Address: &proxyAddress})
+	if err != nil {
+		t.Fatal("could not create the numeric-guard test client")
+	}
+	unsafe := integrationValues("unsafe-numeric")
+	unsafe["large"] = json.Number("9007199254740993")
+	target := "/" + fixture.v2 + "allowed/f03-unsafe-put"
+	if _, err := proxied.Put(ctx, writer, target, unsafe, vault.WriteOptions{}); !errors.Is(err, vault.ErrInvalidData) || destinationWrites.Load() != 0 {
+		t.Fatal("lossy KV v2 put was not rejected before sending a mutation")
+	}
+	if _, err := client.Read(ctx, writer, target, vault.KVOptions{}); !errors.Is(err, vault.ErrNotFound) {
+		t.Fatal("rejected lossy KV v2 put created a destination")
+	}
+	source := "/" + fixture.v1 + "allowed/f03-unsafe-move-source"
+	if _, err := client.Put(ctx, writer, source, unsafe, vault.WriteOptions{}); err != nil {
+		t.Fatal("KV v1 rejected an arbitrary-precision JSON number")
+	}
+	requireIntegrationValues(t, ctx, client, writer, source, unsafe)
+	destination := "/" + fixture.v2 + "allowed/f03-unsafe-move-destination"
+	if _, err := proxied.Move(ctx, writer, source, destination, vault.WriteOptions{Force: true}); !errors.Is(err, vault.ErrInvalidData) || destinationWrites.Load() != 0 {
+		t.Fatal("lossy cross-engine move was not rejected before writing its destination")
+	}
+	requireIntegrationValues(t, ctx, client, writer, source, unsafe)
+	if _, err := client.Read(ctx, writer, destination, vault.KVOptions{}); !errors.Is(err, vault.ErrNotFound) {
+		t.Fatal("rejected lossy cross-engine move created a destination")
+	}
+
+	// Characterize the pinned real backend independently of Secretwright. KV v2
+	// converts this integer through float64; the client guard must prevent that
+	// server-side precision loss instead of silently changing an expected value.
+	backendPath := fixture.v2 + "data/allowed/f03-backend-numeric-characterization"
+	if _, err := fixture.admin.Logical().WriteWithContext(ctx, backendPath, map[string]any{"data": unsafe}); err != nil {
+		t.Fatal("could not provision the direct KV v2 numeric characterization")
+	}
+	stored, err := fixture.admin.Logical().ReadWithContext(ctx, backendPath)
+	if err != nil || stored == nil {
+		t.Fatal("could not read the direct KV v2 numeric characterization")
+	}
+	data, ok := stored.Data["data"].(map[string]any)
+	if !ok {
+		t.Fatal("direct KV v2 numeric characterization omitted its data")
+	}
+	actual, ok := data["large"].(json.Number)
+	if !ok {
+		t.Fatal("direct KV v2 numeric characterization returned a nonnumeric value")
+	}
+	actualNumber, actualOK := new(big.Rat).SetString(actual.String())
+	expectedNumber, expectedOK := new(big.Rat).SetString(unsafe["large"].(json.Number).String())
+	if !actualOK || !expectedOK || actualNumber.Cmp(expectedNumber) == 0 {
+		t.Fatal("the pinned KV v2 backend no longer exhibits the characterized numeric limitation; review the write guard")
+	}
 }
 
 func TestIntegrationKVWritePermissionsAndPartialMove(t *testing.T) {

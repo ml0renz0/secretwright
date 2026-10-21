@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Ampliar la lectura de [F02](F02-kv-read-navigation.md) con escrituras KV v1/v2, copia, movimiento y recuperación de versiones KV v2. Se conservan la resolución de rutas, la selección de token y las opciones de conexión de F01/F02. Las operaciones son sobre una clave; la recursividad pertenece a F05 del [roadmap](../roadmap.md).
+Ampliar la lectura de [F02](F02-kv-read-navigation.md) con escrituras KV v1/v2, copia, movimiento y recuperación de versiones KV v2. Las escrituras deben conservar los valores numéricos o rechazarlos antes de enviarlos cuando el motor KV v2 los alteraría. Se conservan la resolución de rutas, la selección de token y las opciones de conexión de F01/F02. Las operaciones son sobre una clave; la recursividad pertenece a F05 del [roadmap](../roadmap.md).
 
 ## Contrato funcional
 
@@ -22,7 +22,13 @@ secretwright rollback [opciones] PATH VERSION
 
 ### Entrada de datos y escritura
 
-`put` lee JSON de la entrada estándar o del archivo indicado por `--file`. El valor explícito `--file -` selecciona stdin. Se admite exactamente un objeto JSON no vacío, de hasta 1 MiB; JSON malformado, entradas adicionales y otros tipos de valor se rechazan antes de escribir. Los números conservan su precisión. No se aceptan secretos como argumentos `clave=valor` y la ayuda no consume stdin ni carga credenciales.
+`put` lee JSON de la entrada estándar o del archivo indicado por `--file`. El valor explícito `--file -` selecciona stdin. Se admite exactamente un objeto JSON no vacío, de hasta 1 MiB; JSON malformado, entradas adicionales y otros tipos de valor se rechazan antes de escribir. El análisis y el envío HTTP conservan la precisión de los números. No se aceptan secretos como argumentos `clave=valor` y la ayuda no consume stdin ni carga credenciales.
+
+KV v2 interpreta los datos mediante `float64` en el servidor. Antes de una escritura KV v2, Secretwright comprueba todos los números, incluidos los de objetos y arrays anidados: si convertirlos a `float64` y volver a serializarlos como JSON cambia su valor numérico, rechaza la operación con `ErrInvalidData` y código `1`. También rechaza desbordamientos y valores no nulos que pasarían a cero. El mensaje recomienda usar strings para identificadores o cantidades que necesiten precisión arbitraria; no hay conversión ni redondeo silencioso.
+
+Se admiten `0.1`, `1.0` y `9007199254740994`, aunque la representación textual pueda normalizarse. Se rechazan, por ejemplo, `9007199254740993`, `0.123456789012345678901`, `1e1000` y `1e-1000`. Esta validación se aplica a `put`, `cp`, `mv` y `rollback` antes de enviar los datos a un destino KV v2. En `mv`, un rechazo numérico conserva el origen. KV v1 mantiene el tratamiento de números de precisión arbitraria, sin esta restricción adicional.
+
+El comportamiento del servidor se puede consultar en el [`json.Unmarshal` del motor KV v2 v0.27.0](https://github.com/hashicorp/vault-plugin-secrets-kv/blob/v0.27.0/path_data.go#L262), versión incluida por [Vault v2.2.0](https://github.com/hashicorp/vault/blob/v2.2.0/go.mod#L178). Preservar el número en la petición HTTP no garantiza que una escritura sin esta comprobación lo conserve al leerlo después.
 
 `put` sustituye el objeto de datos completo, no hace una actualización parcial:
 
@@ -124,12 +130,14 @@ El contrato, las pruebas y la ampliación de CI preceden a la implementación.
 
 | Escenario | Resultado exigido |
 | --- | --- |
-| JSON de stdin y archivo | Objeto único no vacío, límite de 1 MiB, números grandes exactos y rechazo de datos inválidos sin escrituras. |
+| JSON de stdin y archivo | Objeto único no vacío, límite de 1 MiB, precisión conservada en análisis y envío HTTP, y rechazo de datos inválidos sin escrituras. |
+| Números KV v2 | Se admiten `0.1`, `1.0` y `9007199254740994`; se rechazan números que cambian de valor tras el paso por `float64` y vuelta a JSON, desbordamientos y valores no nulos que pasarían a cero, también anidados. No se envía la escritura ni se borra el origen de un movimiento rechazado. |
+| Precisión arbitraria | KV v1 conserva sus números; strings de identificadores o cantidades arbitrarias se conservan en KV v1/v2 sin conversión automática. |
 | Escritura KV v1/v2 | Payload y ruta API correctos; lectura posterior devuelve exactamente los datos esperados. |
 | CAS | Creación exclusiva por defecto; actualización con versión esperada; conflicto obsoleto sin cambiar el valor actual. |
 | Opciones y descubrimiento | Rechazo de combinaciones no admitidas, CAS negativo, versiones inválidas y rutas iguales antes de mutar. Una denegación de descubrimiento no provoca una escritura. |
 | Permisos | Token con lectura pero sin escritura rechazado; subárbol permitido y subárbol denegado comprobados contra Vault real. |
-| Copia | Copia entre montajes y entre KV v1/v2, sin historial ni metadatos arbitrarios, conservando la precisión de los datos. |
+| Copia | Copia entre montajes y entre KV v1/v2, sin historial ni metadatos arbitrarios ni redondeo; un destino KV v2 rechaza números incompatibles antes de escribir. |
 | Movimiento | Fallo de copia conserva el origen; origen v2 elimina solo su revisión capturada; fallo posterior a la copia devuelve `5` sin borrar el destino. |
 | Revisión concurrente | Una escritura nueva en el origen tras confirmar el destino permanece legible después de mover la revisión capturada. |
 | Respuesta perdida | Sin confirmación del destino no se borra el origen; con destino confirmado y borrado sin confirmar se conserva la copia y se devuelve `5`. |

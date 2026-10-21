@@ -347,12 +347,33 @@ try:
     for name in ['first', 'second']:
         private_json('f03-input-' + name + '.json', {
             'value': 'private-f03-smoke-' + secrets.token_hex(16),
-            'large': 9007199254740993,
+            'large': 9007199254740994,
+            'large_id': '9007199254740993',
             'data': {'nested': 'private-f03-nested-' + secrets.token_hex(16)},
         })
+    private_json('f03-input-unsafe.json', {
+        'value': 'private-f03-smoke-' + secrets.token_hex(16),
+        'large': 9007199254740993,
+    })
 except (OSError, ValueError, TypeError, KeyError, urllib.error.URLError):
     raise SystemExit('Could not prepare the disposable KV mutation smoke fixture.') from None
 PY
+
+expect_kv_failure 1 f03-unsafe-put ./bin/secretwright put \
+  --token-file "$fixture_dir/kv-write-token" --file "$fixture_dir/f03-input-unsafe.json" \
+  /f03-smoke-v2/allowed/unsafe
+expect_kv_failure 3 f03-unsafe-missing ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/unsafe
+./bin/secretwright put --token-file "$fixture_dir/kv-write-token" \
+  --file "$fixture_dir/f03-input-unsafe.json" /f03-smoke-v1/allowed/unsafe-source \
+  >"$fixture_dir/f03-unsafe-v1-put.json" 2>"$fixture_dir/f03-unsafe-v1-put.err"
+expect_kv_failure 1 f03-unsafe-move ./bin/secretwright mv \
+  --token-file "$fixture_dir/kv-write-token" --force \
+  /f03-smoke-v1/allowed/unsafe-source /f03-smoke-v2/allowed/unsafe-moved
+./bin/secretwright cat --token-file "$fixture_dir/kv-write-token" /f03-smoke-v1/allowed/unsafe-source \
+  >"$fixture_dir/f03-cat-unsafe-v1.json" 2>"$fixture_dir/f03-cat-unsafe-v1.err"
+expect_kv_failure 3 f03-unsafe-move-missing ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-write-token" /f03-smoke-v2/allowed/unsafe-moved
 
 ./bin/secretwright put --token-file "$fixture_dir/kv-write-token" \
   /f03-smoke-v2/allowed/history <"$fixture_dir/f03-input-first.json" \
@@ -437,16 +458,19 @@ fixture = Path(sys.argv[1])
 credentials = [(fixture / name).read_text().strip() for name in ['root-token', 'kv-token', 'kv-write-token', 'kv-partial-token']]
 first = json.loads((fixture / 'f03-input-first.json').read_text())
 second = json.loads((fixture / 'f03-input-second.json').read_text())
+unsafe = json.loads((fixture / 'f03-input-unsafe.json').read_text())
 cat_values = {
     'f03-cat-current': second, 'f03-cat-historical': first,
     'f03-cat-restored': second, 'f03-cat-rollback': first,
     'f03-cat-v1-copy': first, 'f03-cat-moved': first,
     'f03-cat-partial-source': second, 'f03-cat-partial-destination': second,
+    'f03-cat-unsafe-v1': unsafe,
 }
 failures = {
     'f03-stale-cas', 'f03-soft-deleted', 'f03-destroyed',
     'f03-v1-copy-unforced', 'f03-v1-move-unforced', 'f03-moved-source',
     'f03-v1-rm-unforced', 'f03-v1-removed', 'f03-partial',
+    'f03-unsafe-put', 'f03-unsafe-missing', 'f03-unsafe-move', 'f03-unsafe-move-missing',
 }
 reports = {}
 for output_file in sorted(fixture.glob('f03-*.json')):
@@ -459,7 +483,7 @@ for output_file in sorted(fixture.glob('f03-*.json')):
     error = output_file.with_suffix('.err').read_text()
     if any(token in output + error for token in credentials):
         raise SystemExit('KV mutation smoke exposed a credential.')
-    if 'private-f03-' in error or '9007199254740993' in error:
+    if 'private-f03-' in error or '9007199254740993' in error or '9007199254740994' in error:
         raise SystemExit('KV mutation diagnostics exposed a secret value.')
     if case in failures:
         if output or not error:
@@ -472,10 +496,10 @@ for output_file in sorted(fixture.glob('f03-*.json')):
     if error:
         raise SystemExit('KV mutation success emitted unexpected diagnostics.')
     if case in cat_values:
-        if report != cat_values[case] or report.get('large') != 9007199254740993:
+        if report != cat_values[case]:
             raise SystemExit('KV mutation readback changed values or numeric precision.')
     else:
-        if 'private-f03-' in output or '9007199254740993' in output:
+        if 'private-f03-' in output or '9007199254740993' in output or '9007199254740994' in output:
             raise SystemExit('KV mutation report exposed a secret value.')
         reports[case] = report
 

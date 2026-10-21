@@ -34,31 +34,29 @@ func TestKVPutInputSourcesPreserveExactNumbers(t *testing.T) {
 			var writes atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				writes.Add(1)
-				if r.URL.Path != "/v1/secret/data/item" || (r.Method != http.MethodPost && r.Method != http.MethodPut) {
+				if r.URL.Path != "/v1/secret/item" || (r.Method != http.MethodPost && r.Method != http.MethodPut) {
 					t.Error("input put used an unexpected operation")
 				}
-				var payload struct {
-					Data map[string]any `json:"data"`
-				}
+				var payload map[string]any
 				decoder := json.NewDecoder(r.Body)
 				decoder.UseNumber()
 				if err := decoder.Decode(&payload); err != nil {
 					t.Errorf("put submitted invalid JSON: %v", err)
 				}
-				got, ok := payload.Data["number"].(json.Number)
-				if !ok || got.String() != number || payload.Data["value"] != "private-file-value" {
+				got, ok := payload["number"].(json.Number)
+				if !ok || got.String() != number || payload["value"] != "private-file-value" {
 					t.Error("put did not preserve the selected input and exact large integer")
 				}
-				nested, ok := payload.Data["nested"].(map[string]any)
+				nested, ok := payload["nested"].(map[string]any)
 				if !ok || nested["enabled"] != true {
 					t.Error("put did not preserve nested JSON data")
 				}
-				kvWriteData(t, w, map[string]any{"version": 1})
+				w.WriteHeader(http.StatusNoContent)
 			}))
 			defer server.Close()
 			t.Setenv("VAULT_ADDR", server.URL)
 			t.Setenv("VAULT_TOKEN", "private-input-token")
-			args := []string{"put", "--mount", "secret", "--kv-version", "2"}
+			args := []string{"put", "--mount", "secret", "--kv-version", "1"}
 			var reader io.Reader = strings.NewReader(input)
 			switch source {
 			case "explicit stdin":
@@ -76,7 +74,7 @@ func TestKVPutInputSourcesPreserveExactNumbers(t *testing.T) {
 			if code != 0 || stderr != "" {
 				t.Fatalf("put selected input failed: exit=%d, stderr=%q", code, stderr)
 			}
-			kvAssertJSON(t, stdout, `{"path":"/secret/item","kv_version":2,"version":1}`)
+			kvAssertJSON(t, stdout, `{"path":"/secret/item","kv_version":1}`)
 			if writes.Load() != 1 || strings.Contains(stdout+stderr, "private-") || strings.Contains(stdout+stderr, number) {
 				t.Error("put retried or exposed its input or credential")
 			}

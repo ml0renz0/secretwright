@@ -15,7 +15,7 @@ import (
 
 func TestReadVersionUsesExactPositiveRevisionWithoutMetadataProjection(t *testing.T) {
 	var requests atomic.Int32
-	values := map[string]any{"value": "fixture-secret-value", "large": json.Number("9007199254740993123456789")}
+	values := map[string]any{"value": "fixture-secret-value", "large": json.Number("9007199254740994")}
 	client := kvTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		assertKVReadOnlyRequest(t, r, "selected-token")
@@ -123,7 +123,7 @@ func TestVersionRestorationAndDestructionUseOnlyExplicitRevisions(t *testing.T) 
 
 func TestRollbackReadsCurrentMetadataBeforeOldDataAndCreatesNewVersionWithCAS(t *testing.T) {
 	var stage atomic.Int32
-	values := map[string]any{"value": "fixture-secret-value", "large": json.Number("9007199254740993123456789")}
+	values := map[string]any{"value": "fixture-secret-value", "large": json.Number("9007199254740994")}
 	client := kvTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		assertKVWriteCredentials(t, r, "selected-token")
 		switch stage.Add(1) {

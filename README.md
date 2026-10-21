@@ -107,6 +107,10 @@ El [contrato de F02](docs/features/F02-kv-read-navigation.md) detalla la navegac
 
 `put` recibe un único objeto JSON no vacío, de hasta 1 MiB, por stdin o desde `--file`. `--file -` también selecciona stdin. Sustituye el objeto completo; no acepta datos `clave=valor` como argumentos.
 
+El cliente conserva los números al interpretar y enviar JSON. El motor KV v2 pasa los datos por `float64`, por lo que Secretwright rechaza antes de escribir cualquier número cuyo valor cambiaría al volver a JSON, también dentro de objetos o arrays. Se admiten, por ejemplo, `0.1`, `1.0` y `9007199254740994`; se rechazan `9007199254740993`, decimales que perderían cifras y valores fuera de rango. El error devuelve `1` y recomienda usar strings para identificadores o cifras de precisión arbitraria, sin convertirlos automáticamente. Esta comprobación se aplica a `put`, `cp`, `mv` y `rollback` con destino KV v2; KV v1 conserva el tratamiento de números de precisión arbitraria.
+
+La limitación está en el [motor KV v2 v0.27.0](https://github.com/hashicorp/vault-plugin-secrets-kv/blob/v0.27.0/path_data.go#L262), incluido en [Vault v2.2.0](https://github.com/hashicorp/vault/blob/v2.2.0/go.mod#L178).
+
 ```bash
 # En un montaje KV v2, crear una clave sin sobrescribir su historial.
 ./bin/secretwright put --file database.json /secret/app/database

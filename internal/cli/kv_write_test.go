@@ -53,7 +53,8 @@ func TestKVPutUsesCreateOnlyAndExplicitCAS(t *testing.T) {
 				if err := decoder.Decode(&request); err != nil {
 					t.Errorf("invalid put JSON: %v", err)
 				}
-				if request.Options.CAS.String() != test.want || request.Data["value"] != "private-input-value" {
+				number, ok := request.Data["number"].(json.Number)
+				if request.Options.CAS.String() != test.want || request.Data["value"] != "private-input-value" || !ok || number.String() != "9007199254740994" {
 					t.Error("put lost its explicit/default CAS or submitted values")
 				}
 				kvWriteData(t, w, map[string]any{"version": 8, "private": "private-upstream-value"})
@@ -66,7 +67,7 @@ func TestKVPutUsesCreateOnlyAndExplicitCAS(t *testing.T) {
 				args = append(args, "--cas", test.cas)
 			}
 			args = append(args, "/secret/item")
-			code, stdout, stderr := runWriteCLI(strings.NewReader(`{"value":"private-input-value"}`), args...)
+			code, stdout, stderr := runWriteCLI(strings.NewReader(`{"value":"private-input-value","number":9007199254740994}`), args...)
 			if code != 0 || stderr != "" {
 				t.Fatalf("put failed: exit=%d, stderr=%q", code, stderr)
 			}
@@ -80,6 +81,41 @@ func TestKVPutUsesCreateOnlyAndExplicitCAS(t *testing.T) {
 				t.Errorf("put made %d requests, want one explicit write", writes.Load())
 			}
 		})
+	}
+}
+
+func TestKVPutRejectsNumbersThatKV2WouldChangeBeforeWriting(t *testing.T) {
+	cleanEnvironment(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	t.Setenv("VAULT_ADDR", server.URL)
+	t.Setenv("VAULT_TOKEN", "private-numeric-token")
+	for _, test := range []struct {
+		name  string
+		input string
+	}{
+		{name: "integer", input: `{"value":9007199254740993,"marker":"private-input-marker"}`},
+		{name: "nested integer", input: `{"nested":[{"private-numeric-key-marker":9007199254740993123456789}]}`},
+		{name: "decimal", input: `{"value":0.10000000000000001,"marker":"private-input-marker"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			code, stdout, stderr := runWriteCLI(strings.NewReader(test.input), "put", "--mount", "secret", "--kv-version", "2", "/secret/private-path-marker")
+			if code != 1 || stdout != "" || stderr == "" {
+				t.Errorf("unsafe KV v2 number returned exit=%d, stdout=%q, stderr=%q", code, stdout, stderr)
+			}
+			for _, marker := range []string{"private-", "9007199254740993", "0.10000000000000001"} {
+				if strings.Contains(stdout+stderr, marker) {
+					t.Error("unsafe KV v2 number diagnostic exposed input, a path, or credentials")
+				}
+			}
+		})
+	}
+	if requests.Load() != 0 {
+		t.Errorf("unsafe KV v2 numbers made %d requests", requests.Load())
 	}
 }
 
