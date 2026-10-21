@@ -6,9 +6,9 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00 está integrada** y establece el proyecto Go, una CLI mínima, la consulta de estado de Vault y el laboratorio de pruebas. **F01 está en desarrollo** y añade comprobación de autenticación por token y opciones de conexión. La shell interactiva, las operaciones KV, los blueprints y la rotación pertenecen a fases posteriores.
+**F00 y F01 están integradas**: base Go, consulta de estado, comprobación de tokens, opciones de conexión y laboratorio de pruebas. **F02 está en desarrollo** y añade lectura y navegación KV v1/v2. La escritura, la shell interactiva, los blueprints y la rotación pertenecen a fases posteriores.
 
-Las consultas usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Ambos comandos son de solo lectura.
+Las consultas usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos de lectura KV utilizan el token seleccionado sin exigir una autoinspección previa. Las operaciones disponibles son de solo lectura.
 
 ## Compilar y ejecutar
 
@@ -60,6 +60,47 @@ El archivo explícito tiene prioridad sobre `VAULT_TOKEN`. Secretwright no recib
 
 Una respuesta `403` puede corresponder a un token válido sin permiso de autoinspección. La comprobación no acredita permisos sobre secretos ni sobre otros recursos.
 
+## Leer y navegar secretos KV
+
+Las opciones van antes de la ruta. Se puede utilizar `VAULT_TOKEN` o el mismo archivo explícito de token que admite `auth check`.
+
+```bash
+./bin/secretwright mounts --token-file /run/secrets/vault-token
+./bin/secretwright ls --token-file /run/secrets/vault-token /
+./bin/secretwright ls --token-file /run/secrets/vault-token /secret/app
+./bin/secretwright cat --token-file /run/secrets/vault-token /secret/app/database
+
+# Resolver una ruta relativa desde un directorio lógico explícito.
+./bin/secretwright cat --cwd /secret/app \
+  --token-file /run/secrets/vault-token database
+./bin/secretwright cd --cwd /secret/app \
+  --token-file /run/secrets/vault-token ..
+```
+
+`mounts` devuelve un array JSON de montajes KV visibles, con su ruta y versión. `ls` devuelve los nombres inmediatos ordenados; los directorios terminan en `/`. `cat` devuelve los valores del secreto por stdout en JSON, sin los metadatos de KV v2. F02 lee la versión actual; una versión actual borrada se comunica como no encontrada.
+
+`cd` valida el directorio mediante un listado y devuelve su ruta canónica en `{"path":"/secret"}`. No conserva el directorio entre procesos: usa esa ruta como `--cwd` en la siguiente invocación. La shell de F04 mantendrá el directorio dentro de la sesión.
+
+Las rutas incluyen el montaje y admiten `.` y `..`. Se normalizan las barras repetidas y no se sale de `/`. F02 rechaza `%`, `\`, `?`, `#`, espacios en blanco y caracteres de control; no hay que codificar las rutas como URL.
+
+El descubrimiento de montajes utiliza los metadatos disponibles para el token, sin exigir acceso administrativo a `sys/mounts`. Si se conoce el montaje, la pareja `--mount` y `--kv-version` evita ese descubrimiento:
+
+```bash
+./bin/secretwright cat --mount secret --kv-version 2 \
+  --token-file /run/secrets/vault-token /secret/app/database
+```
+
+Ambas opciones deben aparecer juntas y la ruta debe pertenecer al montaje indicado. No se adivina una versión cuando Vault deniega el descubrimiento. Poder leer un secreto tampoco garantiza poder listar su directorio.
+
+| Código | Resultado de los comandos KV |
+| --- | --- |
+| `0` | Consulta satisfactoria. |
+| `2` | Falta un token o Vault devuelve `401` o `403`. |
+| `3` | Ruta o secreto no encontrado, incluida una versión actual borrada. |
+| `1` | Error de configuración, ruta, respuesta, transporte o salida. |
+
+El [contrato de F02](docs/features/F02-kv-read-navigation.md) detalla la navegación, los resultados y los escenarios de permisos.
+
 ## Configuración
 
 Configura explícitamente la dirección del servidor; el valor predeterminado es `https://127.0.0.1:8200`. Las opciones van después del comando: `status --timeout 5s` o `auth check --namespace equipo`.
@@ -76,7 +117,7 @@ Configura explícitamente la dirección del servidor; el valor predeterminado es
 | `VAULT_TLS_SERVER_NAME` | Nombre de servidor que se verificará durante TLS. |
 | `VAULT_NAMESPACE` | Namespace de Vault, cuando el servidor lo admita. |
 | `VAULT_CLIENT_TIMEOUT` | Límite positivo de tiempo con formato Go, por ejemplo `5s` o `1m`. |
-| `VAULT_TOKEN` | Token usado únicamente por `auth check` cuando no se indica `--token-file`. |
+| `VAULT_TOKEN` | Token usado por `auth check` y los comandos KV cuando no se indica `--token-file`. |
 
 `--address` tiene prioridad sobre ambas variables de dirección. `--namespace` tiene prioridad sobre `VAULT_NAMESPACE`, incluso con un valor vacío para seleccionar el namespace raíz. El timeout se resuelve en este orden: `--timeout`, `VAULT_CLIENT_TIMEOUT`, diez segundos. Para la confianza CA se priorizan el archivo, el contenido PEM y el directorio, en ese orden.
 
@@ -104,7 +145,7 @@ make integration-local
 
 El laboratorio utiliza Docker o un ejecutable `vault` ya instalado y elimina los recursos que crea al terminar. No descarga automáticamente herramientas en el equipo. Docker o `vault` son requisitos de las pruebas locales, no del binario Secretwright.
 
-`make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. Las pruebas de autenticación necesitan ese archivo para crear y revocar sus propios tokens de prueba. El contrato de [F01](docs/features/F01-connectivity-authentication.md) detalla los escenarios.
+`make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md) y [F02](docs/features/F02-kv-read-navigation.md) detallan los escenarios.
 
 La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias, compilación y pruebas de integración contra Vault efímero.
 
@@ -115,6 +156,7 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Roadmap F00–F13](docs/roadmap.md)
 - [Contrato de F00](docs/features/F00-bootstrap.md)
 - [Contrato de F01](docs/features/F01-connectivity-authentication.md)
+- [Contrato de F02](docs/features/F02-kv-read-navigation.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 

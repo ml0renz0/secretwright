@@ -151,3 +151,141 @@ for case in ['auth-valid', 'auth-missing', 'auth-invalid']:
         raise SystemExit('Authentication failure smoke produced unexpected output.')
 print('CLI authentication smoke passed: valid file, missing token, invalid token.')
 PY
+
+# Provision a second, independent KV fixture for the compiled binary. Its token
+# can read/list only its own allowed subtree and cannot perform lookup-self.
+# Expected secret values and captured cat output remain in the private fixture.
+python3 - "$fixture_dir" <<'PY'
+from pathlib import Path
+import json
+import os
+import secrets
+import sys
+import urllib.error
+import urllib.request
+
+fixture = Path(sys.argv[1])
+address = os.environ['VAULT_ADDR']
+root_token = (fixture / 'root-token').read_text().strip()
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+def request(path, payload=None, method='POST'):
+    body = None if payload is None else json.dumps(payload).encode()
+    message = urllib.request.Request(address + '/v1/' + path, data=body, method=method)
+    message.add_header('X-Vault-Token', root_token)
+    message.add_header('Content-Type', 'application/json')
+    with opener.open(message, timeout=5) as response:
+        content = response.read()
+        return json.loads(content) if content else None
+
+def private_json(path, value):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, 'w') as target:
+        json.dump(value, target)
+
+mounts = [('f02-smoke-v1', 1), ('f02-smoke-v2', 2), ('f02-smoke-parent/kv', 2)]
+expected = {}
+policy = []
+try:
+    for mount, version in mounts:
+        request('sys/mounts/' + mount, {'type': 'kv', 'options': {'version': str(version)}})
+        for key in ['allowed/item', 'allowed/data/item', 'denied/item']:
+            values = {'value': 'private-kv-smoke-' + secrets.token_hex(16), 'data': {'nested': 'private-nested-' + secrets.token_hex(16)}}
+            expected[mount + '/' + key] = values
+            path = mount + '/' + ('data/' if version == 2 else '') + key
+            request(path, {'data': values} if version == 2 else values)
+        read_path = mount + '/' + ('data/' if version == 2 else '') + 'allowed/*'
+        list_path = mount + '/' + ('metadata/' if version == 2 else '') + 'allowed'
+        policy.extend([
+            'path ' + json.dumps(read_path) + ' { capabilities = ["read"] }',
+            'path ' + json.dumps(list_path) + ' { capabilities = ["list"] }',
+            'path ' + json.dumps(list_path + '/*') + ' { capabilities = ["list"] }',
+        ])
+    request('f02-smoke-v2/data/allowed/deleted', {'data': {'value': 'private-deleted-' + secrets.token_hex(16)}})
+    request('f02-smoke-v2/data/allowed/deleted', method='DELETE')
+    request('sys/policies/acl/f02-smoke-read-list', {'policy': '\n'.join(policy)})
+    response = request('auth/token/create', {'policies': ['f02-smoke-read-list'], 'no_default_policy': True, 'ttl': '2m', 'display_name': 'secretwright-f02-smoke'})
+    token = response['auth']['client_token']
+    descriptor = os.open(fixture / 'kv-token', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, 'w') as target:
+        target.write(token)
+    private_json(fixture / 'kv-expected.json', expected)
+except (OSError, ValueError, TypeError, KeyError, urllib.error.URLError):
+    raise SystemExit('Could not prepare the disposable KV smoke fixture.') from None
+PY
+
+VAULT_TOKEN=f02-deliberately-invalid-inherited-token \
+  ./bin/secretwright cat --token-file "$fixture_dir/kv-token" \
+  --mount f02-smoke-v1 --kv-version 1 /f02-smoke-v1/allowed/item \
+  >"$fixture_dir/kv-v1.json" 2>"$fixture_dir/kv-v1.err"
+VAULT_TOKEN=f02-deliberately-invalid-inherited-token \
+  ./bin/secretwright cat --token-file "$fixture_dir/kv-token" \
+  --cwd /f02-smoke-v2/allowed item \
+  >"$fixture_dir/kv-v2.json" 2>"$fixture_dir/kv-v2.err"
+VAULT_TOKEN=f02-deliberately-invalid-inherited-token \
+  ./bin/secretwright cat --token-file "$fixture_dir/kv-token" \
+  --cwd /f02-smoke-v2/allowed data/item \
+  >"$fixture_dir/kv-v2-data.json" 2>"$fixture_dir/kv-v2-data.err"
+./bin/secretwright ls --token-file "$fixture_dir/kv-token" /f02-smoke-v1/allowed \
+  >"$fixture_dir/kv-ls.json" 2>"$fixture_dir/kv-ls.err"
+./bin/secretwright cd --token-file "$VAULT_TEST_ROOT_TOKEN_FILE" /f02-smoke-parent \
+  >"$fixture_dir/kv-cd.json" 2>"$fixture_dir/kv-cd.err"
+./bin/secretwright mounts --token-file "$VAULT_TEST_ROOT_TOKEN_FILE" \
+  >"$fixture_dir/kv-mounts.json" 2>"$fixture_dir/kv-mounts.err"
+
+expect_kv_failure() {
+  local expected_status="$1"
+  local fixture_name="$2"
+  shift 2
+  local result=0
+  "$@" >"$fixture_dir/$fixture_name.json" 2>"$fixture_dir/$fixture_name.err" || result=$?
+  if [[ "$result" -ne "$expected_status" ]]; then
+    echo 'KV failure smoke returned an unexpected exit code.' >&2
+    exit 1
+  fi
+}
+
+expect_kv_failure 2 kv-denied ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-token" /f02-smoke-v2/denied/item
+expect_kv_failure 3 kv-missing ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-token" /f02-smoke-v1/allowed/missing
+expect_kv_failure 3 kv-deleted ./bin/secretwright cat \
+  --token-file "$fixture_dir/kv-token" /f02-smoke-v2/allowed/deleted
+
+python3 - "$fixture_dir" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+fixture = Path(sys.argv[1])
+expected = json.loads((fixture / 'kv-expected.json').read_text())
+credentials = [(fixture / 'root-token').read_text().strip(), (fixture / 'kv-token').read_text().strip()]
+outputs = {}
+for case in ['kv-v1', 'kv-v2', 'kv-v2-data', 'kv-ls', 'kv-cd', 'kv-mounts', 'kv-denied', 'kv-missing', 'kv-deleted']:
+    output = (fixture / (case + '.json')).read_text()
+    error = (fixture / (case + '.err')).read_text()
+    if any(token in output + error for token in credentials) or 'f02-deliberately-invalid' in output + error:
+        raise SystemExit('KV smoke exposed a credential.')
+    if case in ['kv-denied', 'kv-missing', 'kv-deleted']:
+        if output or not error or 'private-kv-smoke-' in error or 'private-nested-' in error:
+            raise SystemExit('KV failure smoke exposed secret values or unexpected output.')
+    else:
+        try:
+            outputs[case] = json.loads(output)
+        except (ValueError, TypeError):
+            raise SystemExit('KV smoke did not produce valid JSON.') from None
+        if error:
+            raise SystemExit('KV success smoke emitted unexpected diagnostics.')
+
+for case, path in [('kv-v1', 'f02-smoke-v1/allowed/item'), ('kv-v2', 'f02-smoke-v2/allowed/item'), ('kv-v2-data', 'f02-smoke-v2/allowed/data/item')]:
+    if outputs[case] != expected[path]:
+        raise SystemExit('KV smoke returned the wrong record or a wire-level wrapper.')
+if outputs['kv-ls'] != ['data/', 'item']:
+    raise SystemExit('KV smoke returned an incorrect directory listing.')
+if outputs['kv-cd'] != {'path': '/f02-smoke-parent'}:
+    raise SystemExit('KV smoke did not select the virtual directory.')
+for path, version in [('f02-smoke-v1/', 1), ('f02-smoke-v2/', 2), ('f02-smoke-parent/kv/', 2)]:
+    if not any(item.get('path') == path and item.get('version') == version for item in outputs['kv-mounts']):
+        raise SystemExit('KV smoke omitted a mount or engine version.')
+print('CLI KV smoke passed: v1/v2, nested mounts, navigation and access denial.')
+PY
