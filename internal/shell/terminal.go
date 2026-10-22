@@ -35,6 +35,9 @@ type terminalEditor struct {
 	mode   *readline.State
 	resize func()
 
+	widthMu sync.Mutex
+	width   int
+
 	errMu  sync.Mutex
 	err    error
 	failed chan struct{}
@@ -73,15 +76,26 @@ func NewTerminalEditor(input io.ReadCloser, stdout, stderr io.Writer, complete f
 		DisableAutoSaveHistory: true,
 		InterruptPrompt:        "\n",
 		EOFPrompt:              "\n",
-		AutoComplete:           terminalCompleter(complete),
-		FuncIsTerminal:         func() bool { return true },
-		FuncMakeRaw:            e.enterRaw,
-		FuncExitRaw:            e.exitRaw,
+		AutoComplete: terminalCompleter{
+			complete: complete,
+			width:    e.completionWidth,
+			leaveMenu: func() {
+				// This runs in readline's input loop. Its public mode reset
+				// changes only completion fields and does not acquire a lock.
+				e.instance.Operation.ExitCompleteMode(false)
+			},
+		},
+		FuncIsTerminal: func() bool { return true },
+		FuncMakeRaw:    e.enterRaw,
+		FuncExitRaw:    e.exitRaw,
 		FuncGetWidth: func() int {
 			width, _, err := readline.GetSize(int(outputFile.Fd()))
 			if err != nil || width <= 0 {
-				return 80
+				width = 80
 			}
+			e.widthMu.Lock()
+			e.width = width
+			e.widthMu.Unlock()
 			return width
 		},
 		// Refresh dimensions between reads without installing process-wide
@@ -343,10 +357,20 @@ func (w terminalWriter) Write(data []byte) (int, error) {
 	return n, nil
 }
 
-type terminalCompleter func([]rune, int) ([][]rune, int)
+func (e *terminalEditor) completionWidth() int {
+	e.widthMu.Lock()
+	defer e.widthMu.Unlock()
+	return e.width
+}
 
-func (complete terminalCompleter) Do(line []rune, position int) (candidates [][]rune, prefix int) {
-	if complete == nil {
+type terminalCompleter struct {
+	complete  func([]rune, int) ([][]rune, int)
+	width     func() int
+	leaveMenu func()
+}
+
+func (c terminalCompleter) Do(line []rune, position int) (candidates [][]rune, prefix int) {
+	if c.complete == nil {
 		return nil, 0
 	}
 	defer func() {
@@ -354,5 +378,48 @@ func (complete terminalCompleter) Do(line []rune, position int) (candidates [][]
 			candidates, prefix = nil, 0
 		}
 	}()
-	return complete(line, position)
+	candidates, _ = c.complete(line, position)
+	if len(candidates) == 0 {
+		return nil, 0
+	}
+	if len(candidates) == 1 {
+		// readline otherwise renders even a unique result when an existing
+		// menu is being refreshed. Leave that menu so the full suffix is
+		// inserted directly, regardless of its display width.
+		if c.leaveMenu != nil {
+			c.leaveMenu()
+		}
+		return candidates, 0
+	}
+	width := 0
+	if c.width != nil {
+		width = c.width()
+	}
+	for _, candidate := range candidates {
+		if (readline.Runes{}).WidthAll(candidate) > width-2 {
+			// An overwide menu gives readline zero columns and makes its
+			// navigation divide by zero. Preserve only the ordinary shared
+			// expansion; if there is none, leave the typed input unchanged.
+			common := candidates[0]
+			for _, other := range candidates[1:] {
+				length := 0
+				for length < len(common) && length < len(other) && common[length] == other[length] {
+					length++
+				}
+				common = common[:length]
+			}
+			if len(common) == 0 {
+				return nil, 0
+			}
+			if c.leaveMenu != nil {
+				c.leaveMenu()
+			}
+			return [][]rune{append([]rune(nil), common...)}, 0
+		}
+	}
+	// The offset is used only to display the already typed prefix. A rune
+	// count there is unsafe for wide Unicode prefixes because readline
+	// subtracts display width when padding the menu. Show suffixes instead;
+	// selecting one still appends exactly the same completion to the line.
+	return candidates, 0
 }
