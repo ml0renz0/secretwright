@@ -525,3 +525,5 @@ PY
 
 CGO_ENABLED=1 "${GO:-go}" build -race -trimpath -o "$fixture_dir/secretwright-shell-race" ./cmd/secretwright
 python3 ./scripts/shell_smoke.py "$fixture_dir/secretwright-shell-race" "$fixture_dir"
+
+python3 ./scripts/advanced_smoke.py ./bin/secretwright "$fixture_dir"
