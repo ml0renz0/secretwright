@@ -79,7 +79,7 @@ func (c *Client) Replace(ctx context.Context, token, target string, match, repla
 			}
 		}
 		plans = append(plans, bulkPlanItem{
-			item: BulkItem{Path: snapshot.target.logical, KVVersion: snapshot.target.mount.Version},
+			item:   BulkItem{Path: snapshot.target.logical, KVVersion: snapshot.target.mount.Version},
 			target: snapshot.target, data: data, revision: snapshot.revision, unchanged: unchanged,
 		})
 	}
@@ -149,7 +149,7 @@ func (c *Client) CopyTree(ctx context.Context, token, source, destination string
 			return BulkResult{}, err
 		}
 		plans = append(plans, bulkPlanItem{
-			item: BulkItem{Path: snapshot.target.logical, Destination: selected.logical, KVVersion: selected.mount.Version},
+			item:   BulkItem{Path: snapshot.target.logical, Destination: selected.logical, KVVersion: selected.mount.Version},
 			target: selected, data: data,
 		})
 	}
@@ -194,7 +194,7 @@ func (c *Client) RemoveTree(ctx context.Context, token, target string, opts Bulk
 			return BulkResult{}, ErrInvalidPath
 		}
 		plans = append(plans, bulkPlanItem{
-			item: BulkItem{Path: snapshot.target.logical, KVVersion: snapshot.target.mount.Version},
+			item:   BulkItem{Path: snapshot.target.logical, KVVersion: snapshot.target.mount.Version},
 			target: snapshot.target, revision: snapshot.revision, deletion: true,
 		})
 	}
@@ -247,7 +247,7 @@ func (c *Client) Restore(ctx context.Context, token, destination string, archive
 			return BulkResult{}, err
 		}
 		plans = append(plans, bulkPlanItem{
-			item: BulkItem{Path: selected.logical, KVVersion: selected.mount.Version},
+			item:   BulkItem{Path: selected.logical, KVVersion: selected.mount.Version},
 			target: selected, data: data,
 		})
 	}
