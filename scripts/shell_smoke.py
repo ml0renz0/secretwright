@@ -126,7 +126,10 @@ class TerminalSession:
         while True:
             plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', self.buffer)
             tail = re.split(rb'[\r\n]', plain)[-1]
-            if re.fullmatch(marker, tail):
+            # readline's runebuf.output appends a space and backspace when
+            # its final input line is empty. It moves the cursor back while
+            # leaving a blank cell; this is still an empty editing prompt.
+            if re.fullmatch(marker + rb'(?: \x08)?', tail):
                 result, self.buffer = self.buffer, b''
                 return result
             require(time.monotonic() < deadline, 'Terminal session did not reach an empty command prompt.')
