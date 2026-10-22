@@ -2,14 +2,14 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00 y F01 están integradas; F02 está implementada en la PR #3, pendiente de merge. F03 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
+F00–F02 están integradas; F03 está implementada en la PR #4, pendiente de merge. F04 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
 | **F00** | **Bootstrap y CI/CD Base** | Estructura del proyecto Go, compilación, GitHub Actions, primer Vault efímero y framework reutilizable de pruebas de integración. | Integrada — [PR #1](https://github.com/ml0renz0/secretwright/pull/1) |
 | **F01** | **Vault Connectivity & Authentication** | Cliente Vault, configuración, TLS, tokens, autenticación, namespaces y gestión de conexiones. | Integrada — [PR #2](https://github.com/ml0renz0/secretwright/pull/2) |
-| **F02** | **KV Storage: Read & Navigation** | Soporte KV v1/v2, detección de mounts, `ls`, `cd`, `cat`, navegación y resolución de rutas. | Pendiente de merge — [PR #3](https://github.com/ml0renz0/secretwright/pull/3), [contrato](features/F02-kv-read-navigation.md) |
-| **F03** | **KV Storage: Write & Versioning** | `put`, `rm`, `cp`, `mv`, gestión de versiones KV v2, recuperación de secretos y operaciones seguras. | Pendiente |
+| **F02** | **KV Storage: Read & Navigation** | Soporte KV v1/v2, detección de mounts, `ls`, `cd`, `cat`, navegación y resolución de rutas. | Integrada — [PR #3](https://github.com/ml0renz0/secretwright/pull/3) |
+| **F03** | **KV Storage: Write & Versioning** | `put`, `rm`, `cp`, `mv`, gestión de versiones KV v2, recuperación de secretos y operaciones seguras. | Pendiente de merge — [PR #4](https://github.com/ml0renz0/secretwright/pull/4), [contrato](features/F03-kv-write-versioning.md) |
 | **F04** | **Interactive Shell** | REPL, prompt, historial seguro, autocompletado remoto, búsqueda interactiva y ejecución no interactiva. | Pendiente |
 | **F05** | **Advanced Secret Operations** | `tree`, `find`, `replace`, operaciones recursivas, concurrencia controlada, backup y restore. | Pendiente |
 | **F06** | **Access & Identity Management** | Políticas ACL, AppRoles, RoleID/SecretID, gestión de identidades, permisos, emisión y revocación de credenciales. | Pendiente |

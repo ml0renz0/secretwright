@@ -6,9 +6,9 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00 y F01 están integradas**: base Go, consulta de estado, comprobación de tokens, opciones de conexión y laboratorio de pruebas. **F02 añade lectura y navegación KV v1/v2** en la [PR #3](https://github.com/ml0renz0/secretwright/pull/3), pendiente de merge. La escritura, la shell interactiva, los blueprints y la rotación pertenecen a fases posteriores.
+**F00–F02 están integradas**: base Go, conexión, comprobación de tokens y lectura/navegación KV v1/v2. **F03 añade escritura, copia, movimiento e historial KV v2** en la [PR #4](https://github.com/ml0renz0/secretwright/pull/4), pendiente de merge. La shell interactiva, los blueprints y la rotación pertenecen a fases posteriores.
 
-Las consultas usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos de lectura KV utilizan el token seleccionado sin exigir una autoinspección previa. Las operaciones disponibles son de solo lectura.
+Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
 ## Compilar y ejecutar
 
@@ -77,7 +77,7 @@ Las opciones van antes de la ruta. Se puede utilizar `VAULT_TOKEN` o el mismo ar
   --token-file /run/secrets/vault-token ..
 ```
 
-`mounts` devuelve un array JSON de montajes KV visibles, con su ruta y versión. `ls` devuelve los nombres inmediatos ordenados; los directorios terminan en `/`. `cat` devuelve los valores del secreto por stdout en JSON, sin los metadatos de KV v2. F02 lee la versión actual; una versión actual borrada se comunica como no encontrada.
+`mounts` devuelve un array JSON de montajes KV visibles, con su ruta y versión. `ls` devuelve los nombres inmediatos ordenados; los directorios terminan en `/`. `cat` devuelve los valores del secreto por stdout en JSON, sin los metadatos de KV v2. Por defecto lee la versión actual; una versión actual borrada se comunica como no encontrada, sin seleccionar otra automáticamente.
 
 `cd` valida el directorio mediante un listado y devuelve su ruta canónica en `{"path":"/secret"}`. No conserva el directorio entre procesos: usa esa ruta como `--cwd` en la siguiente invocación. La shell de F04 mantendrá el directorio dentro de la sesión.
 
@@ -97,9 +97,57 @@ Ambas opciones deben aparecer juntas y la ruta debe pertenecer al montaje indica
 | `0` | Consulta satisfactoria. |
 | `2` | Falta un token o Vault devuelve `401` o `403`. |
 | `3` | Ruta o secreto no encontrado, incluida una versión actual borrada. |
+| `4` | Conflicto de versión CAS en una escritura. |
+| `5` | Escritura del destino de un movimiento confirmada; borrado del origen sin confirmar. |
 | `1` | Error de configuración, ruta, respuesta, transporte o salida. |
 
 El [contrato de F02](docs/features/F02-kv-read-navigation.md) detalla la navegación, los resultados y los escenarios de permisos.
+
+## Escribir, copiar y recuperar versiones
+
+`put` recibe un único objeto JSON no vacío, de hasta 1 MiB, por stdin o desde `--file`. `--file -` también selecciona stdin. Sustituye el objeto completo; no acepta datos `clave=valor` como argumentos.
+
+El cliente conserva los números al interpretar y enviar JSON. El motor KV v2 pasa los datos por `float64`, por lo que Secretwright rechaza antes de escribir cualquier número cuyo valor cambiaría al volver a JSON, también dentro de objetos o arrays. Se admiten, por ejemplo, `0.1`, `1.0` y `9007199254740994`; se rechazan `9007199254740993`, decimales que perderían cifras y valores fuera de rango. El error devuelve `1` y recomienda usar strings para identificadores o cifras de precisión arbitraria, sin convertirlos automáticamente. Esta comprobación se aplica a `put`, `cp`, `mv` y `rollback` con destino KV v2; KV v1 conserva el tratamiento de números de precisión arbitraria.
+
+La limitación está en el [motor KV v2 v0.27.0](https://github.com/hashicorp/vault-plugin-secrets-kv/blob/v0.27.0/path_data.go#L262), incluido en [Vault v2.2.0](https://github.com/hashicorp/vault/blob/v2.2.0/go.mod#L178).
+
+```bash
+# En un montaje KV v2, crear una clave sin sobrescribir su historial.
+./bin/secretwright put --file database.json /secret/app/database
+
+# Sustituir solo si la versión actual sigue siendo la 3.
+./bin/secretwright put --file database.json --cas 3 /secret/app/database
+
+# Leer el JSON de la entrada estándar.
+./bin/secretwright put /secret/app/database < database.json
+```
+
+En KV v2 el CAS predeterminado es `0`, que solo permite crear una clave sin historial. `--cas N` positivo exige que la versión actual coincida. En KV v1 `put` sustituye los datos directamente y rechaza `--cas`, incluso `0`. No existe `put --force`.
+
+`cp` copia los valores actuales, sin historial. En KV v2 el CAS se aplica al **destino**; en un destino KV v1 se exige `--force` porque no puede condicionarse la sustitución. La pareja `--mount`/`--kv-version` se aplica a ambas rutas: para cruzar montajes se usa el descubrimiento automático.
+
+`mv` confirma la copia antes de borrar el origen. En KV v2 borra solo la revisión capturada al leerlo y conserva una revisión posterior escrita concurrentemente. Un origen KV v1 requiere `--force`, pues su borrado no puede condicionarse. El movimiento no es atómico: si se confirmó la escritura del destino pero no se puede confirmar el borrado del origen, devuelve `5`, conserva el destino y requiere comprobar ambas rutas antes de reintentar. Si la propia escritura del destino pierde su respuesta o devuelve una respuesta inválida, el código es `1`; el destino puede haberse escrito, pero Secretwright no borra el origen.
+
+```bash
+./bin/secretwright cp /secret/app/database /secret/app/database-copy
+./bin/secretwright mv /secret/app/database-copy /secret/app/database-archived
+```
+
+En KV v2, `rm` borra reversiblemente la versión actual o las revisiones indicadas con `--versions`. En KV v1 elimina permanentemente una clave y exige `--force`. No hay borrados recursivos ni eliminación de metadatos.
+
+```bash
+./bin/secretwright versions /secret/app/database
+./bin/secretwright cat --version 2 /secret/app/database
+./bin/secretwright rm --versions 2,3 /secret/app/database
+./bin/secretwright undelete --versions 2,3 /secret/app/database
+./bin/secretwright rollback /secret/app/database 2
+./bin/secretwright destroy --versions 1 --force /secret/app/database
+./bin/secretwright rm --force /legacy/app/database
+```
+
+Las consultas históricas, `undelete`, `rollback` y `destroy` requieren KV v2. `versions` devuelve revisiones ordenadas con sus fechas y estado, sin valores ni metadatos personalizados. `rollback` crea una **versión nueva** con los datos de la revisión seleccionada y CAS sobre la versión actual; no reescribe el historial. `destroy` destruye permanentemente las revisiones indicadas. Los números de `--versions` deben ser positivos y separarse por comas, sin espacios.
+
+Las escrituras devuelven rutas, versiones y estado de la operación en JSON, sin los valores del secreto. Un error de transporte después de enviar una mutación puede dejar su resultado sin confirmar; Secretwright lo indica y no reintenta automáticamente. El [contrato de F03](docs/features/F03-kv-write-versioning.md) especifica las comprobaciones, conflictos y movimientos parciales.
 
 ## Configuración
 
@@ -125,7 +173,7 @@ El cliente oficial también valida la configuración de entorno. Un `VAULT_CLIEN
 
 La verificación TLS es obligatoria: `VAULT_SKIP_VERIFY=true` se rechaza. Para una CA interna, proporciona su certificado. El laboratorio utiliza HTTP únicamente en la interfaz local.
 
-Las cabeceras heredadas de `VAULT_HEADERS` no se envían, aunque el cliente oficial valida su formato JSON. `VAULT_WRAP_TTL` tampoco activa el encapsulado de respuestas. `status` continúa sin enviar tokens después de una comprobación de autenticación. Ninguna de estas consultas sigue redirecciones ni hace reintentos automáticos.
+Las cabeceras heredadas de `VAULT_HEADERS` no se envían, aunque el cliente oficial valida su formato JSON. `VAULT_WRAP_TTL` tampoco activa el encapsulado de respuestas. `status` continúa sin enviar tokens después de una comprobación de autenticación. Las peticiones no siguen redirecciones ni hacen reintentos automáticos.
 
 ## Desarrollo y pruebas
 
@@ -145,7 +193,7 @@ make integration-local
 
 El laboratorio utiliza Docker o un ejecutable `vault` ya instalado y elimina los recursos que crea al terminar. No descarga automáticamente herramientas en el equipo. Docker o `vault` son requisitos de las pruebas locales, no del binario Secretwright.
 
-`make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md) y [F02](docs/features/F02-kv-read-navigation.md) detallan los escenarios.
+`make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md), [F02](docs/features/F02-kv-read-navigation.md) y [F03](docs/features/F03-kv-write-versioning.md) detallan los escenarios.
 
 La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias, compilación y pruebas de integración contra Vault efímero.
 
@@ -157,6 +205,7 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F00](docs/features/F00-bootstrap.md)
 - [Contrato de F01](docs/features/F01-connectivity-authentication.md)
 - [Contrato de F02](docs/features/F02-kv-read-navigation.md)
+- [Contrato de F03](docs/features/F03-kv-write-versioning.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 

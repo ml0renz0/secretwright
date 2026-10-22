@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/ml0renz0/secretwright/internal/vault"
@@ -24,6 +25,14 @@ Usage:
   secretwright ls [options] [PATH] List children of a logical Vault directory
   secretwright cat [options] PATH  Print the requested secret values as JSON
   secretwright cd [options] [PATH] Validate and resolve a logical directory
+  secretwright put [options] PATH  Replace secret values using JSON stdin or --file
+  secretwright rm [options] PATH   Delete a single secret or selected KV v2 versions
+  secretwright cp [options] SOURCE DEST  Copy current secret values
+  secretwright mv [options] SOURCE DEST  Copy, then delete the source revision
+  secretwright versions [options] PATH   Print KV v2 version metadata
+  secretwright undelete [options] --versions CSV PATH  Restore KV v2 revisions
+  secretwright destroy [options] --versions CSV --force PATH  Destroy revisions
+  secretwright rollback [options] PATH VERSION  Restore values as a new revision
 
 Network options (after the command, before a path):
   --address URL           Override VAULT_ADDR and VAULT_AGENT_ADDR
@@ -33,7 +42,7 @@ Network options (after the command, before a path):
 Authentication option (auth check and KV commands):
   --token-file PATH       Read a token from this file instead of VAULT_TOKEN
 
-KV path options (ls, cat and cd only):
+KV path options (all KV commands except mounts):
   --cwd PATH             Resolve relative paths from this logical directory
   --mount PATH           Explicit KV mount; requires --kv-version
   --kv-version 1|2       Explicit KV version; requires --mount
@@ -55,10 +64,14 @@ Status exit codes: 0 initialized and unsealed; 2 sealed or uninitialized;
 Auth check exit codes: 0 authenticated; 2 no token or lookup-self denied;
 1 configuration, request, or output error.
 KV exit codes: 0 success; 2 no token or permission denied; 3 path not found;
-1 configuration, request, or output error.
+4 version conflict; 5 partial move; 1 configuration, request, or output error.
 
 Tokens are not accepted as command-line arguments or saved to disk.
 cat prints requested secret values to standard output.
+put reads one nonempty JSON object, at most 1 MiB; it replaces all values.
+KV v2 put/cp/mv create by default; --cas N permits a matching revision update.
+KV v1 removal and copy/move destination replacement require --force.
+mv is not atomic; after exit 5, verify both paths before retrying.
 cd does not retain a directory between invocations; use --cwd explicitly.
 The interactive shell and declarative operations are planned.
 `
@@ -83,6 +96,12 @@ var errInvalidOptions = errors.New("invalid command options; run secretwright he
 // Run executes one command and returns a process exit code. It does not close
 // streams or terminate the process, which lets acceptance tests use real HTTP.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version string) int {
+	return RunWithInput(ctx, args, os.Stdin, stdout, stderr, version)
+}
+
+// RunWithInput executes one command using the supplied input stream for put.
+// Help and other commands do not consume the stream.
+func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, version string) int {
 	if len(args) == 0 {
 		return writeHelp(stdout, stderr)
 	}
@@ -105,6 +124,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version s
 		return status(ctx, args[1:], stdout, stderr)
 	case "mounts", "ls", "cat", "cd":
 		return kvCommand(ctx, args[0], args[1:], stdout, stderr)
+	case "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback":
+		return kvWriteCommand(ctx, args[0], args[1:], stdin, stdout, stderr)
 	case "auth":
 		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
 			return writeUsage(stdout, stderr, authUsage)
