@@ -17,12 +17,31 @@ import sys
 import termios
 import threading
 import time
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class SmokeFailure(Exception):
     pass
+
+
+SMOKE_STAGE = 'startup'
+
+
+def smoke_stage(value):
+    global SMOKE_STAGE
+    SMOKE_STAGE = value
+
+
+def safe_exception_details(error):
+    lines = []
+    frame = error.__traceback__
+    while frame is not None:
+        if frame.tb_frame.f_code.co_filename == __file__:
+            lines.append(str(frame.tb_lineno))
+        frame = frame.tb_next
+    return 'stage=' + SMOKE_STAGE + '; class=' + type(error).__name__ + '; script_lines=' + ','.join(lines)
 
 
 def require(condition, message):
@@ -178,6 +197,7 @@ def decode_outputs(path):
 
 
 def main():
+    smoke_stage('fixture-startup')
     binary = Path(sys.argv[1]).resolve()
     fixture = Path(sys.argv[2]).resolve()
     address = os.environ['VAULT_ADDR']
@@ -185,7 +205,8 @@ def main():
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def provision(path, payload):
-        message = urllib.request.Request(address + '/v1/' + path, data=json.dumps(payload).encode(), method='POST')
+        encoded_path = urllib.parse.quote(path, safe='/')
+        message = urllib.request.Request(address + '/v1/' + encoded_path, data=json.dumps(payload).encode(), method='POST')
         message.add_header('X-Vault-Token', root_token)
         message.add_header('Content-Type', 'application/json')
         with opener.open(message, timeout=5) as response:
@@ -194,6 +215,7 @@ def main():
 
     mount = 'f04-smoke-kv'
     provision('sys/mounts/' + mount, {'type': 'kv', 'options': {'version': '2'}})
+    smoke_stage('fixture-seed')
     for key in [
         'database', 'nested/item',
         'nested/秘密/apple/item', 'nested/秘密/azure/item',
@@ -206,6 +228,7 @@ def main():
         'path "' + mount + '/metadata/allowed" { capabilities = ["list"] }',
         'path "' + mount + '/metadata/allowed/*" { capabilities = ["list"] }',
     ])
+    smoke_stage('fixture-credential')
     provision('sys/policies/acl/f04-smoke', {'policy': policy})
     response = provision('auth/token/create', {'policies': ['f04-smoke'], 'no_default_policy': True, 'ttl': '2m'})
     token = response['auth']['client_token']
@@ -223,6 +246,7 @@ def main():
         ('f04-batch', ['shell', '--no-prompt', '--token-file', str(token_file)], commands.encode()),
         ('f04-script', ['--script', str(script), '--token-file', str(token_file)], b'unread-private-command\n'),
     ]:
+        smoke_stage(name)
         output_file = fixture / (name + '.json')
         error_file = fixture / (name + '.err')
         with open(output_file, 'xb') as output, open(error_file, 'xb') as error:
@@ -233,13 +257,22 @@ def main():
         values = decode_outputs(output_file)
         require(values == [{'path': cwd}, {'path': cwd}, ['database', 'nested/'], ['cd ' + cwd, 'pwd', 'ls']], 'Batch shell changed cwd, JSON, or its safe history.')
 
+    smoke_stage('terminal-startup')
     session = TerminalSession(binary, fixture, 'f04-interactive', environment)
     try:
         session.prompt(status=0)
+        smoke_stage('terminal-directory')
         session.write(('cd ' + cwd + '\r').encode())
         output_count = 1
         session.wait_outputs(output_count)
         session.prompt(cwd, status=0)
+        smoke_stage('terminal-suspend-paste')
+        session.write(b'\x1apwd\rpwd\r')
+        output_count += 2
+        pasted = session.wait_outputs(output_count)
+        require(pasted[-2:] == [{'path': cwd}, {'path': cwd}], 'Pasted commands lost the session directory after Ctrl-Z.')
+        session.prompt(cwd, status=0)
+        smoke_stage('terminal-tab')
         session.write(b'ls dat\t')
         session.until(b'database')
         session.write(b'\x03')
@@ -252,6 +285,7 @@ def main():
         # columns wider than the terminal. Exercise selection movement too:
         # the upstream renderer mixes rune counts with display widths here.
         for prefix in [cwd + '/nested/秘密/a', cwd + '/nested/long/x']:
+            smoke_stage('terminal-boundary-completion')
             session.write(('ls ' + prefix + '\t\t').encode() + b'\x01\x05\x03\x03')
             session.prompt(cwd, status=130)
             session.write(b'pwd\r')
@@ -260,6 +294,7 @@ def main():
             session.prompt(cwd, status=0)
         # Edit an approved history entry into a rejected line. Autosave and the
         # library's temporary history entry must not make it searchable later.
+        smoke_stage('terminal-rejected-history')
         session.write(b'\x1b[A\x15bad-command unretained-fragment\r')
         session.until(b'secretwright: unknown command')
         session.prompt(cwd, status=1)
@@ -269,12 +304,14 @@ def main():
         require(isinstance(history_output, list) and all('bad-command' not in entry and 'unretained-fragment' not in entry for entry in history_output), 'Interactive history retained rejected input.')
         session.prompt(cwd, status=0)
         session.drain()
+        smoke_stage('terminal-reverse-search-failed')
         session.write(b'\x12unretained-fragment')
         search = session.until(b'failing bck-i-search: unretained-fragment')
         search += session.drain()
         require(b'bad-command' not in search, 'Reverse history search retained a rejected command.')
         session.write(b'\x03\x03')
         session.prompt(cwd, status=130)
+        smoke_stage('terminal-reverse-search-approved')
         session.write(b'\x12pwd\r')
         output_count += 1
         session.wait_outputs(output_count)
@@ -283,6 +320,7 @@ def main():
         output_count += 1
         session.wait_outputs(output_count)
         session.prompt(cwd, status=0)
+        smoke_stage('terminal-exit')
         session.write(b'\x04')
         session.finish()
         outputs = decode_outputs(session.output_path)
@@ -292,6 +330,7 @@ def main():
     finally:
         session.close()
 
+    smoke_stage('interrupt-fixture')
     entered = threading.Event()
     release = threading.Event()
 
@@ -325,6 +364,7 @@ def main():
     cancellation_env['VAULT_ADDR'] = 'http://127.0.0.1:' + str(server.server_address[1])
     canceled = TerminalSession(binary, fixture, 'f04-interrupt', cancellation_env, ['shell', '--timeout', '5s'])
     try:
+        smoke_stage('terminal-interrupt')
         canceled.prompt(status=0)
         canceled.write(b'cat /secret/slow\r')
         require(entered.wait(5), 'Cancellation test did not reach its in-flight request.')
@@ -343,6 +383,7 @@ def main():
         server.server_close()
         worker.join(timeout=2)
 
+    smoke_stage('capture-audit')
     for path in fixture.glob('f04-*'):
         if not path.is_file():
             continue
@@ -359,6 +400,6 @@ if __name__ == '__main__':
     try:
         main()
     except SmokeFailure as error:
-        raise SystemExit(str(error)) from None
-    except Exception:
-        raise SystemExit('Could not complete the private shell smoke fixture.') from None
+        raise SystemExit(str(error) + ' [stage=' + SMOKE_STAGE + ']') from None
+    except Exception as error:
+        raise SystemExit('Private shell smoke fixture failed: ' + safe_exception_details(error)) from None
