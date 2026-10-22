@@ -31,7 +31,8 @@ history prints approved in-memory commands; exit or quit ends the session.
 Ctrl+C cancels the current line or operation; Ctrl+D exits at an empty prompt.
 Connection options and --cwd belong at session startup. put requires --file FILE
 inside a session; use the one-shot put command to read JSON from stdin.
-There is no command expansion, external shell, history file or recursive search.
+Advanced operations use the same fixed connection; JSON files never consume
+commands from stdin. There is no command expansion, external shell or history file.
 `
 
 type shellOptions struct {
@@ -203,7 +204,8 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	}
 	kv := false
 	switch words[0] {
-	case "mounts", "ls", "cat", "cd", "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback":
+	case "mounts", "ls", "cat", "cd", "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback",
+		"tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
 		kv = true
 	case "status", "auth":
 	default:
@@ -242,7 +244,7 @@ func shellOverrides(words []string) bool {
 		switch name {
 		case "address", "namespace", "timeout", "token-file", "cwd":
 			return true
-		case "force", "h", "help":
+		case "force", "dry-run", "h", "help":
 			continue
 		}
 		if !equals {

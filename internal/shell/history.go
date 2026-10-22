@@ -17,7 +17,7 @@ func SafeHistory(arguments []string) (string, bool) {
 		if len(arguments) == 1 {
 			return arguments[0], true
 		}
-	case "ls", "cd", "versions":
+	case "ls", "cd", "versions", "tree":
 		if len(arguments) == 1 {
 			return arguments[0], true
 		}
