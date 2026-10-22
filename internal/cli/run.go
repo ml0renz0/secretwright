@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/ml0renz0/secretwright/internal/vault"
@@ -18,6 +17,8 @@ const usage = `Secretwright — interactive shell and declarative secrets lifecy
 
 Usage:
   secretwright help                 Show this help
+  secretwright shell [options]      Start a Vault command session
+  secretwright --script FILE        Run commands from a file, stopping on error
   secretwright version              Show the build version
   secretwright status [options]     Print Vault health as JSON (no token required)
   secretwright auth check [options] Check token authentication as JSON
@@ -72,8 +73,10 @@ put reads one nonempty JSON object, at most 1 MiB; it replaces all values.
 KV v2 put/cp/mv create by default; --cas N permits a matching revision update.
 KV v1 removal and copy/move destination replacement require --force.
 mv is not atomic; after exit 5, verify both paths before retrying.
-cd does not retain a directory between invocations; use --cwd explicitly.
-The interactive shell and declarative operations are planned.
+cd retains the directory inside a shell session; one-shot calls use --cwd.
+shell offers pwd, history, Tab completion and safe in-memory Ctrl+R search.
+Inside shell, put requires --file FILE and connection options are fixed at startup.
+Declarative operations are planned.
 `
 
 const statusUsage = `Usage: secretwright status [--address URL] [--namespace NAME] [--timeout DURATION]
@@ -96,7 +99,7 @@ var errInvalidOptions = errors.New("invalid command options; run secretwright he
 // Run executes one command and returns a process exit code. It does not close
 // streams or terminate the process, which lets acceptance tests use real HTTP.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, version string) int {
-	return RunWithInput(ctx, args, os.Stdin, stdout, stderr, version)
+	return runWithInterrupt(ctx, args, stdout, stderr, version)
 }
 
 // RunWithInput executes one command using the supplied input stream for put.
@@ -106,6 +109,10 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		return writeHelp(stdout, stderr)
 	}
 	switch args[0] {
+	case "shell":
+		return runShell(ctx, args[1:], stdin, stdout, stderr, version)
+	case "--no-prompt", "--script":
+		return runShell(ctx, args, stdin, stdout, stderr, version)
 	case "help", "-h", "--help":
 		if len(args) != 1 {
 			return commandError(stderr, errInvalidOptions)
