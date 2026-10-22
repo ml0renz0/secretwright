@@ -227,6 +227,41 @@ func TestEditingInterruptClearsLineAndKeepsSessionUsable(t *testing.T) {
 	}
 }
 
+func TestEditorInvalidLineRejectsTheWholeInputAndRecoversOnlyInteractively(t *testing.T) {
+	for _, interactive := range []bool{false, true} {
+		state := newTestState(t, "/")
+		editor := &fakeEditor{steps: []editorStep{
+			{line: "rm --force /legacy/private-input-marker", err: shell.ErrInvalidLine},
+			{line: "pwd"},
+		}}
+		var calls int
+		execute := func(context.Context, []string, string, io.Reader, io.Writer, io.Writer) shell.Result {
+			calls++
+			return shell.Result{}
+		}
+		var stdout, stderr bytes.Buffer
+		code := shell.Run(context.Background(), editor, execute, &stdout, &stderr, shell.Options{Interactive: interactive, State: state})
+		wantCode := 1
+		if interactive {
+			wantCode = 0
+		}
+		if code != wantCode || calls != 0 || strings.Contains(stdout.String()+stderr.String(), "private-input-marker") {
+			t.Error("invalid editor input executed a prefix, exposed raw input, or used the wrong recovery mode")
+		}
+		if interactive && !strings.Contains(stdout.String(), `"path":"/"`) {
+			t.Error("interactive session did not execute the builtin after rejected input")
+		}
+		if !interactive && stdout.Len() != 0 {
+			t.Error("batch session continued after the rejected physical line")
+		}
+		for _, history := range editor.histories {
+			if strings.Contains(strings.Join(history, "\n"), "private-input-marker") {
+				t.Error("editor invalid-line recovery retained rejected raw input in history")
+			}
+		}
+	}
+}
+
 func TestCommandInterruptCancelsOnlyTheCurrentOperation(t *testing.T) {
 	state := newTestState(t, "/")
 	interrupts := make(chan os.Signal, 1)
