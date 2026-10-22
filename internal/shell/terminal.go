@@ -103,7 +103,13 @@ func NewTerminalEditor(input io.ReadCloser, stdout, stderr io.Writer, complete f
 		FuncOnWidthChanged: func(resize func()) { e.resize = resize },
 		FuncFilterInputRune: func(character rune) (rune, bool) {
 			// Suspension and command cancellation belong to the session owner.
-			return character, character != readline.CharCtrlZ
+			// Returning false makes readline enqueue an extra read token;
+			// Ctrl-Z does not pause its terminal reader, so use its safe bell
+			// action instead of leaving a token across command boundaries.
+			if character == readline.CharCtrlZ {
+				return readline.CharBell, true
+			}
+			return character, true
 		},
 	}
 	config.SetListener(e.limitLine)
