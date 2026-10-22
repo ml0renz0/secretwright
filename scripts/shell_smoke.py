@@ -7,6 +7,7 @@ import fcntl
 import json
 import os
 import pty
+import re
 import select
 import signal
 import stat
@@ -96,8 +97,45 @@ class TerminalSession:
         result, self.buffer = self.buffer[:end], self.buffer[end:]
         return result
 
-    def prompt(self, cwd='/'):
-        return self.until(('secretwright:' + cwd + '> ').encode())
+    def prompt(self, cwd='/', status=None):
+        # Readline redraws the prompt before every edited character. A prompt
+        # substring alone therefore does not show that a command finished.
+        # Require a clean input line, and use execution barriers at call sites.
+        code = rb'[0-9]+' if status is None else str(status).encode()
+        marker = rb'\[' + code + rb'\] ' + re.escape(('secretwright:' + cwd + '> ').encode())
+        deadline = time.monotonic() + 8
+        while True:
+            plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', self.buffer)
+            tail = re.split(rb'[\r\n]', plain)[-1]
+            if re.fullmatch(marker, tail):
+                result, self.buffer = self.buffer, b''
+                return result
+            require(time.monotonic() < deadline, 'Terminal session did not reach an empty command prompt.')
+            self._read(0.05)
+            require(self.poll() is None, 'Terminal session exited before its command prompt.')
+
+    def wait_outputs(self, count):
+        deadline = time.monotonic() + 8
+        while True:
+            try:
+                values = decode_outputs(self.output_path)
+            except json.JSONDecodeError:
+                values = []
+            if len(values) >= count:
+                require(len(values) == count, 'Terminal session executed an unexpected additional command.')
+                return values
+            require(time.monotonic() < deadline, 'Terminal command did not produce its expected JSON result.')
+            self._read(0.05)
+            require(self.poll() is None, 'Terminal session exited before its JSON result.')
+
+    def drain(self):
+        # Called after a semantic execution barrier: discard already queued
+        # redraws so the next search assertion cannot inspect earlier input.
+        while select.select([self.master], [], [], 0)[0]:
+            if not self._read(0):
+                break
+        result, self.buffer = self.buffer, b''
+        return result
 
     def poll(self):
         if self.status is None:
@@ -156,7 +194,12 @@ def main():
 
     mount = 'f04-smoke-kv'
     provision('sys/mounts/' + mount, {'type': 'kv', 'options': {'version': '2'}})
-    for key in ['database', 'nested/item']:
+    for key in [
+        'database', 'nested/item',
+        'nested/秘密/apple/item', 'nested/秘密/azure/item',
+        'nested/long/x' + 'a' * 199 + '/item',
+        'nested/long/x' + 'b' * 199 + '/item',
+    ]:
         provision(mount + '/data/allowed/' + key, {'data': {'value': 'private-f04-terminal-value'}})
     policy = '\n'.join([
         'path "' + mount + '/data/allowed/*" { capabilities = ["read"] }',
@@ -192,31 +235,54 @@ def main():
 
     session = TerminalSession(binary, fixture, 'f04-interactive', environment)
     try:
-        session.prompt()
+        session.prompt(status=0)
         session.write(('cd ' + cwd + '\r').encode())
-        session.prompt(cwd)
+        output_count = 1
+        session.wait_outputs(output_count)
+        session.prompt(cwd, status=0)
         session.write(b'ls dat\t')
         session.until(b'database')
         session.write(b'\x03')
-        session.prompt(cwd)
+        session.prompt(cwd, status=130)
         session.write(b'pwd\r')
-        session.prompt(cwd)
+        output_count += 1
+        session.wait_outputs(output_count)
+        session.prompt(cwd, status=0)
+        # Ambiguous completion must survive both wide prefixes and candidate
+        # columns wider than the terminal. Exercise selection movement too:
+        # the upstream renderer mixes rune counts with display widths here.
+        for prefix in [cwd + '/nested/秘密/a', cwd + '/nested/long/x']:
+            session.write(('ls ' + prefix + '\t\t').encode() + b'\x01\x05\x03\x03')
+            session.prompt(cwd, status=130)
+            session.write(b'pwd\r')
+            output_count += 1
+            session.wait_outputs(output_count)
+            session.prompt(cwd, status=0)
         # Edit an approved history entry into a rejected line. Autosave and the
         # library's temporary history entry must not make it searchable later.
         session.write(b'\x1b[A\x15bad-command unretained-fragment\r')
-        session.prompt(cwd)
+        session.until(b'secretwright: unknown command')
+        session.prompt(cwd, status=1)
         session.write(b'history\r')
-        session.prompt(cwd)
+        output_count += 1
+        history_output = session.wait_outputs(output_count)[-1]
+        require(isinstance(history_output, list) and all('bad-command' not in entry and 'unretained-fragment' not in entry for entry in history_output), 'Interactive history retained rejected input.')
+        session.prompt(cwd, status=0)
+        session.drain()
         session.write(b'\x12unretained-fragment')
-        search = session.until(b'unretained-fragment')
-        session._read(0.15)
-        require(b'bad-command' not in search + session.buffer, 'Reverse history search retained a rejected command.')
-        session.write(b'\x03')
-        session.prompt(cwd)
+        search = session.until(b'failing bck-i-search: unretained-fragment')
+        search += session.drain()
+        require(b'bad-command' not in search, 'Reverse history search retained a rejected command.')
+        session.write(b'\x03\x03')
+        session.prompt(cwd, status=130)
         session.write(b'\x12pwd\r')
-        session.prompt(cwd)
+        output_count += 1
+        session.wait_outputs(output_count)
+        session.prompt(cwd, status=0)
         session.write(b'pwd\r')
-        session.prompt(cwd)
+        output_count += 1
+        session.wait_outputs(output_count)
+        session.prompt(cwd, status=0)
         session.write(b'\x04')
         session.finish()
         outputs = decode_outputs(session.output_path)
@@ -259,13 +325,14 @@ def main():
     cancellation_env['VAULT_ADDR'] = 'http://127.0.0.1:' + str(server.server_address[1])
     canceled = TerminalSession(binary, fixture, 'f04-interrupt', cancellation_env, ['shell', '--timeout', '5s'])
     try:
-        canceled.prompt()
+        canceled.prompt(status=0)
         canceled.write(b'cat /secret/slow\r')
         require(entered.wait(5), 'Cancellation test did not reach its in-flight request.')
         os.killpg(canceled.pid, signal.SIGINT)
-        canceled.prompt()
+        canceled.prompt(status=130)
         canceled.write(b'pwd\r')
-        canceled.prompt()
+        canceled.wait_outputs(1)
+        canceled.prompt(status=0)
         canceled.write(b'\x04')
         canceled.finish()
         require(decode_outputs(canceled.output_path) == [{'path': '/'}], 'Interrupting an HTTP command ended the session or emitted secret data.')
@@ -285,7 +352,7 @@ def main():
         data = path.read_bytes()
         require(token.encode() not in data and root_token.encode() not in data, 'Shell smoke exposed a credential.')
         require(b'private-f04-terminal-value' not in data, 'Shell completion or history exposed a secret value.')
-    print('CLI shell smoke passed: batch, script, PTY navigation, Tab, safe Ctrl-R and interrupts.')
+    print('CLI shell smoke passed: batch, script, PTY navigation, safe Tab rendering, Ctrl-R and interrupts.')
 
 
 if __name__ == '__main__':

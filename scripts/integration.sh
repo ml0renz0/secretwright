@@ -523,4 +523,5 @@ if reports['f03-copy'].get('source_deleted') is not False or reports['f03-move']
 print('CLI KV mutation smoke passed: stdin/file, CAS, version lifecycle and partial move.')
 PY
 
-python3 ./scripts/shell_smoke.py ./bin/secretwright "$fixture_dir"
+CGO_ENABLED=1 "${GO:-go}" build -race -trimpath -o "$fixture_dir/secretwright-shell-race" ./cmd/secretwright
+python3 ./scripts/shell_smoke.py "$fixture_dir/secretwright-shell-race" "$fixture_dir"

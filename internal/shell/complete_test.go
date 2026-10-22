@@ -94,9 +94,9 @@ func TestCompletionHandlesUnicodeAndDoesNotCacheRemoteNames(t *testing.T) {
 		return []string{"árbol"}, nil
 	}
 	line := []rune("ls /secret/á")
-	first, _ := shell.Complete(context.Background(), line, len(line), "/", list)
-	second, _ := shell.Complete(context.Background(), line, len(line), "/", list)
-	if !reflect.DeepEqual(completionStrings(first), []string{"rea/"}) || !reflect.DeepEqual(completionStrings(second), []string{"rbol "}) || calls.Load() != 2 {
+	first, firstLength := shell.Complete(context.Background(), line, len(line), "/", list)
+	second, secondLength := shell.Complete(context.Background(), line, len(line), "/", list)
+	if !reflect.DeepEqual(completionStrings(first), []string{"rea/"}) || !reflect.DeepEqual(completionStrings(second), []string{"rbol "}) || calls.Load() != 2 || firstLength != len([]rune("/secret/á")) || secondLength != firstLength {
 		t.Error("completion changed Unicode prefixes or reused stale remote names")
 	}
 }

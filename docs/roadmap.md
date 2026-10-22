@@ -2,7 +2,7 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00–F03 están integradas y F04 está en desarrollo. F05 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
+F00–F03 están integradas. F04 está implementada en la [PR #5](https://github.com/ml0renz0/secretwright/pull/5), pendiente de revisión y merge. F05 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
@@ -10,7 +10,7 @@ F00–F03 están integradas y F04 está en desarrollo. F05 y las fases siguiente
 | **F01** | **Vault Connectivity & Authentication** | Cliente Vault, configuración, TLS, tokens, autenticación, namespaces y gestión de conexiones. | Integrada — [PR #2](https://github.com/ml0renz0/secretwright/pull/2) |
 | **F02** | **KV Storage: Read & Navigation** | Soporte KV v1/v2, detección de mounts, `ls`, `cd`, `cat`, navegación y resolución de rutas. | Integrada — [PR #3](https://github.com/ml0renz0/secretwright/pull/3) |
 | **F03** | **KV Storage: Write & Versioning** | `put`, `rm`, `cp`, `mv`, gestión de versiones KV v2, recuperación de secretos y operaciones seguras. | Integrada — [PR #4](https://github.com/ml0renz0/secretwright/pull/4), [contrato](features/F03-kv-write-versioning.md) |
-| **F04** | **Interactive Shell** | REPL, prompt, historial seguro, autocompletado remoto, búsqueda interactiva del historial y ejecución no interactiva. | En desarrollo — [contrato](features/F04-interactive-shell.md) |
+| **F04** | **Interactive Shell** | REPL, prompt, historial seguro, autocompletado remoto, búsqueda interactiva del historial y ejecución no interactiva. | Implementada, pendiente de merge — [PR #5](https://github.com/ml0renz0/secretwright/pull/5), [contrato](features/F04-interactive-shell.md) |
 | **F05** | **Advanced Secret Operations** | `tree`, `find`, `replace`, operaciones recursivas, concurrencia controlada, backup y restore. | Pendiente |
 | **F06** | **Access & Identity Management** | Políticas ACL, AppRoles, RoleID/SecretID, gestión de identidades, permisos, emisión y revocación de credenciales. | Pendiente |
 | **F07** | **Forge: Blueprint Engine** | Descriptor YAML, JSON Schema, variables, dependencias, `validate`, `plan`, `apply` e idempotencia. | Pendiente |
