@@ -2,7 +2,10 @@ module github.com/ml0renz0/secretwright
 
 go 1.27.0
 
-require github.com/hashicorp/vault/api v1.23.0
+require (
+	github.com/chzyer/readline v1.5.1
+	github.com/hashicorp/vault/api v1.23.0
+)
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect

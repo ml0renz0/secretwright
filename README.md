@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F02 están integradas**: base Go, conexión, comprobación de tokens y lectura/navegación KV v1/v2. **F03 añade escritura, copia, movimiento e historial KV v2** en la [PR #4](https://github.com/ml0renz0/secretwright/pull/4), pendiente de merge. La shell interactiva, los blueprints y la rotación pertenecen a fases posteriores.
+**F00–F03 están integradas**: conexión, comprobación de tokens y operaciones KV v1/v2 con copia, movimiento y versiones. **F04 está en desarrollo** y añade la shell interactiva, navegación de sesión, historial seguro y autocompletado. Los blueprints y la rotación pertenecen a fases posteriores.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -22,7 +22,7 @@ make build
 VAULT_ADDR=https://vault.example.com:8200 ./bin/secretwright status
 ```
 
-Ejecutar `secretwright` sin argumentos muestra la ayuda. La shell interactiva se incorporará en F04.
+Ejecutar `secretwright` sin argumentos abre la shell si hay un terminal interactivo; sin TTY conserva la ayuda. `secretwright shell` inicia una sesión explícita, también desde una tubería o archivo de comandos.
 
 `status` produce JSON con los campos `initialized`, `sealed`, `standby`, `version`, `cluster_name` y `cluster_id`. Su código de salida permite utilizarlo en scripts:
 
@@ -33,6 +33,40 @@ Ejecutar `secretwright` sin argumentos muestra la ayuda. La shell interactiva se
 | `1` | No se ha podido consultar o interpretar el estado. |
 
 Un nodo standby puede estar inicializado y desellado. El código `0` no certifica que el nodo acepte escrituras ni que un token tenga acceso a secretos.
+
+## Shell interactiva y sesiones por lotes
+
+```bash
+./bin/secretwright shell --address https://vault.example.com:8200 \
+  --token-file /run/secrets/vault-token
+
+# Sin prompt ni eco, con directorio conservado entre líneas.
+printf 'cd /secret/app\nls\n' | ./bin/secretwright shell \
+  --token-file /run/secrets/vault-token --no-prompt
+
+./bin/secretwright shell --token-file /run/secrets/vault-token \
+  --script operations.sw
+```
+
+La sesión usa los mismos comandos que la CLI. `cd` cambia su directorio tras comprobarlo; un fallo conserva el anterior. `pwd` devuelve la ruta actual en JSON. El prompt muestra el directorio y el último código de salida en stderr; los resultados siguen saliendo como JSON por stdout.
+
+La dirección, el namespace, el timeout, el archivo de token y `--cwd` se fijan al arrancar la sesión. Esas opciones no pueden cambiarse dentro de ella. Se puede seguir indicando un montaje con `--mount` y `--kv-version` en los comandos que los admiten. La ayuda, el inicio, `pwd` e `history` no consultan Vault ni abren el archivo de token.
+
+Dentro de la shell, `put` exige `--file FILE` y no admite `--file -`: stdin contiene comandos. La CLI directa conserva la entrada JSON por stdin. Por ejemplo, un archivo de sesión puede contener:
+
+```text
+cd /secret/app
+pwd
+put --file database.json database
+versions database
+exit
+```
+
+Tab completa comandos y nombres devueltos por un listado autorizado de Vault; no lee secretos. No ofrece sugerencias si la línea contiene opciones o comillas. Listar un nombre no acredita permiso para leerlo. Ctrl+R busca en el historial aprobado de la sesión: hasta 100 entradas de navegación y consulta, sin archivo en disco. Se excluyen `cat`, autenticación, mutaciones y líneas rechazadas; los valores de los secretos nunca se añaden al historial.
+
+Ctrl+C descarta la línea que se está editando o cancela la operación activa; en modo interactivo conserva la sesión. Ctrl+D con la línea vacía y `exit` terminan con el último código de salida. Los errores permiten continuar en modo interactivo; una sesión por lotes se detiene en el primero. No hay expansión de variables, tuberías, redirecciones ni ejecución de una shell externa.
+
+`secretwright --no-prompt` equivale a una sesión sin prompt y `secretwright --script FILE` lee un archivo de comandos. `--script -` se rechaza; para stdin se usa `shell`. `--file` pertenece a `put`. El [contrato de F04](docs/features/F04-interactive-shell.md) detalla modos, historial, autocompletado e interrupciones. La búsqueda recursiva remota llegará con F05.
 
 ## Comprobar autenticación
 
@@ -79,7 +113,7 @@ Las opciones van antes de la ruta. Se puede utilizar `VAULT_TOKEN` o el mismo ar
 
 `mounts` devuelve un array JSON de montajes KV visibles, con su ruta y versión. `ls` devuelve los nombres inmediatos ordenados; los directorios terminan en `/`. `cat` devuelve los valores del secreto por stdout en JSON, sin los metadatos de KV v2. Por defecto lee la versión actual; una versión actual borrada se comunica como no encontrada, sin seleccionar otra automáticamente.
 
-`cd` valida el directorio mediante un listado y devuelve su ruta canónica en `{"path":"/secret"}`. No conserva el directorio entre procesos: usa esa ruta como `--cwd` en la siguiente invocación. La shell de F04 mantendrá el directorio dentro de la sesión.
+`cd` valida el directorio mediante un listado y devuelve su ruta canónica en `{"path":"/secret"}`. En la CLI directa no conserva el directorio entre procesos: usa esa ruta como `--cwd` en la siguiente invocación. La shell mantiene el directorio dentro de la sesión.
 
 Las rutas incluyen el montaje y admiten `.` y `..`. Se normalizan las barras repetidas y no se sale de `/`. F02 rechaza `%`, `\`, `?`, `#`, espacios en blanco y caracteres de control; no hay que codificar las rutas como URL.
 
@@ -193,9 +227,9 @@ make integration-local
 
 El laboratorio utiliza Docker o un ejecutable `vault` ya instalado y elimina los recursos que crea al terminar. No descarga automáticamente herramientas en el equipo. Docker o `vault` son requisitos de las pruebas locales, no del binario Secretwright.
 
-`make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md), [F02](docs/features/F02-kv-read-navigation.md) y [F03](docs/features/F03-kv-write-versioning.md) detallan los escenarios.
+`make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md), [F02](docs/features/F02-kv-read-navigation.md), [F03](docs/features/F03-kv-write-versioning.md) y [F04](docs/features/F04-interactive-shell.md) detallan los escenarios.
 
-La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias, compilación y pruebas de integración contra Vault efímero.
+La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias, compilación y pruebas de integración contra Vault efímero. F04 añade sesiones por lotes y pruebas del ejecutable con pseudoterminal para navegación, Tab, Ctrl+R e interrupciones, con capturas privadas.
 
 ## Cómo avanzará el proyecto
 
@@ -206,9 +240,12 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F01](docs/features/F01-connectivity-authentication.md)
 - [Contrato de F02](docs/features/F02-kv-read-navigation.md)
 - [Contrato de F03](docs/features/F03-kv-write-versioning.md)
+- [Contrato de F04](docs/features/F04-interactive-shell.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 
 ## Licencia
 
 [MIT](LICENSE).
+
+La edición de línea utiliza [`chzyer/readline` v1.5.1](https://github.com/chzyer/readline/tree/v1.5.1), una dependencia Go integrada en el binario bajo [licencia MIT](https://github.com/chzyer/readline/blob/v1.5.1/LICENSE).
