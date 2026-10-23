@@ -222,10 +222,10 @@ func TestAccessDeadlineAndCancellationStopReadRequests(t *testing.T) {
 
 func TestAccessFileDecodersRejectAmbiguousOrUnboundedSpecifications(t *testing.T) {
 	decoders := map[string]func(io.Reader) error{
-		"role": func(r io.Reader) error { _, err := vault.DecodeRoleSpec(r); return err },
-		"token": func(r io.Reader) error { _, err := vault.DecodeTokenSpec(r); return err },
+		"role":   func(r io.Reader) error { _, err := vault.DecodeRoleSpec(r); return err },
+		"token":  func(r io.Reader) error { _, err := vault.DecodeTokenSpec(r); return err },
 		"entity": func(r io.Reader) error { _, err := vault.DecodeEntitySpec(r); return err },
-		"group": func(r io.Reader) error { _, err := vault.DecodeGroupSpec(r); return err },
+		"group":  func(r io.Reader) error { _, err := vault.DecodeGroupSpec(r); return err },
 	}
 	for name, decode := range decoders {
 		t.Run(name, func(t *testing.T) {
