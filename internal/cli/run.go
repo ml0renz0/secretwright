@@ -34,6 +34,13 @@ Usage:
   secretwright undelete [options] --versions CSV PATH  Restore KV v2 revisions
   secretwright destroy [options] --versions CSV --force PATH  Destroy revisions
   secretwright rollback [options] PATH VERSION  Restore values as a new revision
+  secretwright tree [options] [PATH]  List recursive directory metadata
+  secretwright find --file MATCH.json [options] [PATH]  Find whole matching objects
+  secretwright replace --file RULE.json [options] [PATH]  Replace matching objects
+  secretwright cptree [options] SOURCE DEST  Copy current directory snapshots
+  secretwright rmtree [options] PATH  Delete captured snapshots under a subtree
+  secretwright backup --file OUTPUT.json [options] PATH  Save a private archive
+  secretwright restore --file INPUT.json [options] DEST  Restore current snapshots
 
 Network options (after the command, before a path):
   --address URL           Override VAULT_ADDR and VAULT_AGENT_ADDR
@@ -65,7 +72,8 @@ Status exit codes: 0 initialized and unsealed; 2 sealed or uninitialized;
 Auth check exit codes: 0 authenticated; 2 no token or lookup-self denied;
 1 configuration, request, or output error.
 KV exit codes: 0 success; 2 no token or permission denied; 3 path not found;
-4 version conflict; 5 partial move; 1 configuration, request, or output error.
+4 version conflict; 5 partial/uncertain bulk mutation or partial move;
+130 canceled operation; 1 configuration, request, or output error.
 
 Tokens are not accepted as command-line arguments or saved to disk.
 cat prints requested secret values to standard output.
@@ -76,6 +84,11 @@ mv is not atomic; after exit 5, verify both paths before retrying.
 cd retains the directory inside a shell session; one-shot calls use --cwd.
 shell offers pwd, history, Tab completion and safe in-memory Ctrl+R search.
 Inside shell, put requires --file FILE and connection options are fixed at startup.
+Advanced JSON files must be real filenames, never stdin or '-'. Recursive
+mutations support --dry-run and bounded --concurrency (default 4, maximum 16).
+Backup files contain plaintext secret values; their mode is 0600 and existing
+files are never replaced. Bulk reports contain metadata and require inspection
+after partial failure; there is no automatic rollback.
 Declarative operations are planned.
 `
 
@@ -131,6 +144,8 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		return status(ctx, args[1:], stdout, stderr)
 	case "mounts", "ls", "cat", "cd":
 		return kvCommand(ctx, args[0], args[1:], stdout, stderr)
+	case "tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
+		return kvAdvancedCommand(ctx, args[0], args[1:], stdout, stderr)
 	case "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback":
 		return kvWriteCommand(ctx, args[0], args[1:], stdin, stdout, stderr)
 	case "auth":

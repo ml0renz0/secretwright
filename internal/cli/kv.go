@@ -181,8 +181,11 @@ func kvCommand(ctx context.Context, command string, args []string, stdout, stder
 
 func kvError(stderr io.Writer, err error) int {
 	fmt.Fprintln(stderr, "secretwright:", err)
-	if errors.Is(err, vault.ErrPartial) {
+	if errors.Is(err, vault.ErrPartial) || errors.Is(err, vault.ErrBulkPartial) {
 		return 5
+	}
+	if errors.Is(err, context.Canceled) {
+		return 130
 	}
 	if errors.Is(err, vault.ErrConflict) {
 		return 4

@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F03 están integradas**: conexión, comprobación de tokens y operaciones KV v1/v2 con copia, movimiento y versiones. **F04 está implementada en la [PR #5](https://github.com/ml0renz0/secretwright/pull/5), pendiente de merge**, y añade la shell interactiva, navegación de sesión, historial seguro y autocompletado. Los blueprints y la rotación pertenecen a fases posteriores.
+**F00–F04 están integradas**: conexión, comprobación de tokens, operaciones KV v1/v2 y shell interactiva con navegación, historial seguro y autocompletado. **F05 está implementada en la [PR #6](https://github.com/ml0renz0/secretwright/pull/6), pendiente de revisión y merge**, y añade operaciones recursivas, búsqueda/reemplazo y backup/restore según su [contrato](docs/features/F05-advanced-secret-operations.md). Los blueprints y la rotación pertenecen a fases posteriores.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -66,7 +66,28 @@ Tab completa comandos y nombres devueltos por un listado autorizado de Vault; no
 
 Ctrl+C descarta la línea que se está editando o cancela la operación activa; en modo interactivo conserva la sesión. Ctrl+D con la línea vacía y `exit` terminan con el último código de salida. Los errores permiten continuar en modo interactivo; una sesión por lotes se detiene en el primero. No hay expansión de variables, tuberías, redirecciones ni ejecución de una shell externa.
 
-`secretwright --no-prompt` equivale a una sesión sin prompt y `secretwright --script FILE` lee un archivo de comandos. `--script -` se rechaza; para stdin se usa `shell`. `--file` pertenece a `put`. El [contrato de F04](docs/features/F04-interactive-shell.md) detalla modos, historial, autocompletado e interrupciones. La búsqueda recursiva remota llegará con F05.
+`secretwright --no-prompt` equivale a una sesión sin prompt y `secretwright --script FILE` lee un archivo de comandos. `--script -` se rechaza; para stdin se usa `shell`. `--file` selecciona archivos de datos de los comandos. El [contrato de F04](docs/features/F04-interactive-shell.md) detalla modos, historial, autocompletado e interrupciones.
+
+## Operaciones recursivas y backup
+
+```bash
+./bin/secretwright tree --timeout 1m /secret/app
+./bin/secretwright find --file match.json /secret/app
+./bin/secretwright replace --file replacement.json --dry-run /secret/app
+./bin/secretwright cptree --timeout 1m /secret/app /secret/app-copy
+./bin/secretwright backup --file app-backup.json --timeout 1m /secret/app
+./bin/secretwright restore --file app-backup.json --dry-run /secret/recovered
+```
+
+`tree` recorre nombres mediante LIST y devuelve rutas y tipos en JSON, sin leer secretos. `find` compara el objeto JSON completo de su archivo y devuelve las rutas que coincidan; el orden de las propiedades no importa y los números se comparan sin perder precisión. `replace` recibe un archivo con los objetos `match` y `replacement` y sustituye los objetos completos coincidentes. Los valores nunca se aceptan como argumentos.
+
+`cptree` copia el contenido del directorio conservando las rutas relativas. `rmtree` borra las versiones actuales capturadas, sin destruir historial ni metadatos KV v2; rechaza `/` y las raíces de montajes. Las escrituras y eliminaciones KV v1 exigen `--force`. En KV v2, `replace` usa CAS de la revisión leída y `cptree`/`restore` usan CAS `0`, por lo que no sustituyen claves existentes.
+
+`--dry-run` está disponible en `replace`, `cptree`, `rmtree` y `restore`: muestra la planificación sin mutaciones. Los comandos completan el recorrido, las lecturas y las validaciones antes de escribir. Las operaciones no son atómicas; un fallo tras cambios confirmados o inciertos devuelve `5` con un informe por ruta. No hay rollback ni reintentos automáticos.
+
+El backup contiene los valores actuales en JSON **en texto claro**, se crea con permisos `0600` y nunca sobrescribe un archivo o enlace existente. No guarda tokens, montajes, políticas ni historial. Restore valida todo el archivo antes de contactar con Vault y requiere un destino explícito; no crea montajes. Sus archivos, y los de `find`/`replace`, requieren `--file FILE` y no admiten `-` ni stdin.
+
+`--concurrency` admite entre 1 y 16 tareas, con 4 por defecto; `--timeout` limita la operación completa. Se rechazan recorridos o datos que superen los límites, denegaciones y valores actuales borrados, sin omitirlos silenciosamente. El [contrato de F05](docs/features/F05-advanced-secret-operations.md) especifica el formato del backup, los límites y los informes.
 
 ## Comprobar autenticación
 

@@ -16,9 +16,9 @@ import (
 type Lister func(context.Context, string, string) ([]string, error)
 
 var completionCommands = []string{
-	"auth", "cat", "cd", "cp", "destroy", "exit", "help", "history", "ls",
-	"mounts", "mv", "put", "pwd", "quit", "rm", "rollback", "status",
-	"undelete", "version", "versions",
+	"auth", "backup", "cat", "cd", "cp", "cptree", "destroy", "exit", "find",
+	"help", "history", "ls", "mounts", "mv", "put", "pwd", "quit", "replace",
+	"restore", "rm", "rmtree", "rollback", "status", "tree", "undelete", "version", "versions",
 }
 
 // Complete returns suffixes for readline's API. Completion never reads secret
@@ -147,9 +147,10 @@ func commandSuffixes(prefix string) [][]rune {
 
 func pathPosition(command string, position int) bool {
 	switch command {
-	case "ls", "cd", "cat", "put", "rm", "versions", "undelete", "destroy", "rollback":
+	case "ls", "cd", "cat", "put", "rm", "versions", "undelete", "destroy", "rollback",
+		"tree", "find", "replace", "rmtree", "backup", "restore":
 		return position == 1
-	case "cp", "mv":
+	case "cp", "mv", "cptree":
 		return position == 1 || position == 2
 	}
 	return false

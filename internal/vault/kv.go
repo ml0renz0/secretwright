@@ -60,6 +60,12 @@ func (c *Client) List(ctx context.Context, token, target string, opts KVOptions)
 		return nil, err
 	}
 	defer client.SetToken("")
+	return listKVChildren(ctx, client, logical, explicit)
+}
+
+// listKVChildren shares the exact single-directory behavior with recursive
+// traversal while keeping the operation-owned client and token stable.
+func listKVChildren(ctx context.Context, client *api.Client, logical string, explicit *Mount) ([]string, error) {
 	if logical == "/" {
 		mounts, err := readMountCatalog(ctx, client)
 		if err != nil {
