@@ -17,7 +17,7 @@ func accessEntityData() map[string]any {
 	return map[string]any{
 		"id": f06EntityID, "name": "app", "policies": []string{"app-read"}, "disabled": false,
 		"metadata": map[string]any{"private": "private-f06-entity-metadata"},
-		"aliases": []any{map[string]any{"name": f06RoleID}},
+		"aliases":  []any{map[string]any{"name": f06RoleID}},
 	}
 }
 
@@ -26,7 +26,7 @@ func accessGroupData(groupType string) map[string]any {
 		"id": f06GroupID, "name": "app-team", "type": groupType, "policies": []string{"app-read"},
 		"member_entity_ids": []string{f06EntityID}, "member_group_ids": []string{f06MemberID},
 		"metadata": map[string]any{"private": "private-f06-group-metadata"},
-		"alias": map[string]any{"name": "private-f06-group-alias"},
+		"alias":    map[string]any{"name": "private-f06-group-alias"},
 	}
 }
 

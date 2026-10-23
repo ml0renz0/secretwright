@@ -173,7 +173,7 @@ func TestCapabilitiesQueryPhysicalPathsForTheSelectedTokenOnly(t *testing.T) {
 		kvReply(w, map[string]any{
 			"secret/data/app/item": []string{"read", "read"},
 			"secret/metadata/app/": []string{"read", "list"},
-			"metadata": "private-f06-capability-metadata",
+			"metadata":             "private-f06-capability-metadata",
 		})
 	})
 	got, err := client.Capabilities(context.Background(), "selected-token", []string{"secret/metadata/app/", "secret/data/app/item", "secret/data/app/item"})
