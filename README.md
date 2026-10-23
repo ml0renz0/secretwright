@@ -89,6 +89,25 @@ El backup contiene los valores actuales en JSON **en texto claro**, se crea con 
 
 `--concurrency` admite entre 1 y 16 tareas, con 4 por defecto; `--timeout` limita la operación completa. Se rechazan recorridos o datos que superen los límites, denegaciones y valores actuales borrados, sin omitirlos silenciosamente. El [contrato de F05](docs/features/F05-advanced-secret-operations.md) especifica el formato del backup, los límites y los informes.
 
+## Accesos e identidades
+
+```bash
+./bin/secretwright policy write --token-file admin-token --file app-read.hcl app-read
+./bin/secretwright approle write --token-file admin-token --file app-role.json app
+./bin/secretwright approle credentials --token-file admin-token --out app-credentials.json app
+./bin/secretwright approle login --file app-credentials.json --out app-token
+./bin/secretwright token capabilities --token-file app-token secret/data/app/database
+./bin/secretwright identity group write --token-file admin-token --file group.json
+```
+
+Los grupos `policy`, `approle`, `token` e `identity` administran ACL, roles, credenciales, entidades y grupos internos. Las opciones van después de la acción más específica. AppRole utiliza un montaje de autenticación existente, seleccionable con `--auth-mount`; Secretwright no lo habilita automáticamente.
+
+RoleID, SecretID y tokens se exportan únicamente a archivos nuevos con permisos `0600`; no se muestran en stdout ni se guardan en el historial. Login ignora el token del operador y conserva la sesión actual. Los archivos JSON son estrictos y se validan antes de contactar con Vault; sus campos, límites de TTL y formatos se describen en el [contrato de F06](docs/features/F06-access-identity-management.md).
+
+La creación de tokens exige políticas explícitas y tiempos finitos. Vault conserva la identidad del padre en tokens hijos, por lo que sus permisos derivados de grupos pueden heredarse también. Borrar un SecretID o un rol no revoca los tokens emitidos; `token revoke` y `token revoke-self` requieren `--force` y revocan también descendientes. Las escrituras administrativas no tienen CAS.
+
+Si falla un archivo después de emitir una credencial, se intenta revocarla; una emisión o compensación sin confirmar devuelve `5`, sin volver a emitir automáticamente. Un archivo ya guardado se conserva si falla después el informe de stdout.
+
 ## Comprobar autenticación
 
 ```bash
@@ -103,7 +122,7 @@ El backup contiene los valores actuales en JSON **en texto claro**, se crea con 
   --namespace '' --timeout 5s --token-file /run/secrets/vault-token
 ```
 
-El archivo explícito tiene prioridad sobre `VAULT_TOKEN`. Secretwright no recibe tokens como argumentos, no los guarda y no lee `~/.vault-token`. El archivo admite hasta 64 KiB; se recortan los espacios de los extremos y se rechazan espacios o saltos de línea dentro del token.
+El archivo explícito tiene prioridad sobre `VAULT_TOKEN`. Secretwright no recibe tokens como argumentos, no los guarda automáticamente y no lee `~/.vault-token`. F06 permite exportar credenciales emitidas a un archivo privado elegido con `--out`. El archivo de token admite hasta 64 KiB; se recortan los espacios de los extremos y se rechazan espacios o saltos de línea dentro del token.
 
 `auth check` devuelve JSON con `authenticated`, `namespace`, `policies`, `ttl_seconds` y `renewable`. No muestra el token, su identificador, su accessor ni metadatos arbitrarios de Vault.
 

@@ -76,11 +76,11 @@ La configuración JSON de un rol admite los siguientes campos:
 
 Las políticas son explícitas, no vacías y no pueden incluir `root`. Las tres duraciones son obligatorias, positivas, expresadas en segundos completos mediante unidades de Go, y no superan 24 horas; el TTL máximo del token debe cubrir su TTL inicial. SecretID admite entre 1 y 1000 usos. `token_num_uses` es opcional y vale `0` por defecto, sin límite de usos durante su vigencia; admite hasta 1000.
 
-La escritura fija `bind_secret_id=true`, `token_no_default_policy=true` y tokens de tipo `service`. No permite introducir IDs de token, periodos, credenciales huérfanas, metadatos ni campos arbitrarios. `read` proyecta únicamente la configuración permitida y puede mostrar la configuración real de roles externos a Secretwright; no revela RoleID ni SecretID.
+La escritura fija `bind_secret_id=true`, `token_no_default_policy=true` y tokens de tipo `service`, y limpia cualquier período de token previo. No permite introducir IDs de token, periodos, credenciales huérfanas, metadatos ni campos arbitrarios. `read` proyecta únicamente la configuración permitida y puede mostrar la configuración real de roles externos a Secretwright; no revela RoleID ni SecretID.
 
 `approle role-id` exporta el RoleID a un archivo privado, incluso cuando solo se consulta. Un RoleID puede ser suficiente para autenticar si otro administrador ha desactivado la exigencia de SecretID.
 
-`approle credentials` comprueba que el rol exija SecretID, políticas explícitas y tiempos/usos acotados; después lee el RoleID y genera un SecretID. Exporta exclusivamente un archivo JSON con `role_id`, `secret_id` y `secret_id_accessor`. La comprobación no bloquea cambios concurrentes del rol; las APIs administrativas de Vault no ofrecen CAS.
+`approle credentials` comprueba que el rol exija SecretID, políticas explícitas, tiempos/usos acotados y tokens de servicio sin período. La respuesta debe confirmar el tipo y el período; no se asumen valores seguros si faltan. Después lee el RoleID y genera un SecretID. Exporta exclusivamente un archivo JSON con `role_id`, `secret_id` y `secret_id_accessor`. La comprobación no bloquea cambios concurrentes del rol; las APIs administrativas de Vault no ofrecen CAS.
 
 ```bash
 secretwright approle write --token-file admin-token --file role.json app
@@ -107,7 +107,9 @@ El archivo de `token create` contiene políticas explícitas y tiempos finitos:
 }
 ```
 
-Las políticas son obligatorias, no vacías y excluyen `root`: nunca se deja que Vault herede implícitamente las políticas del emisor. Ambos tiempos son obligatorios y positivos, hasta 24 horas, con máximo no inferior al TTL. Se crean tokens `service`, hijos del emisor y sin la política `default` añadida automáticamente. No se admiten IDs elegidos por el usuario, tokens huérfanos, periodos, roles de emisión ni metadatos arbitrarios.
+Las políticas son obligatorias, no vacías y excluyen `root`: no se permite heredar implícitamente la lista de políticas del token emisor. Ambos tiempos son obligatorios y positivos, hasta 24 horas, con máximo no inferior al TTL. Se crean tokens `service`, hijos del emisor y sin la política `default` añadida automáticamente. No se admiten IDs elegidos por el usuario, tokens huérfanos, periodos, roles de emisión ni metadatos arbitrarios.
+
+Vault conserva la identidad del padre en los tokens hijos. Si el emisor pertenece a una entidad o grupo con políticas, esos permisos derivados de identidad pueden estar presentes también en el hijo, aunque su lista de políticas de token sea explícita. El informe incluye `entity_id` cuando existe. La creación de tokens hijos no proporciona aislamiento respecto a los permisos de identidad del emisor; se conserva esta semántica de Vault y se comprueba con un caso de integración.
 
 Las políticas declaradas deben conceder las operaciones de autoinspección o autorrevocación que se necesiten. Un token puede servir para leer secretos y recibir `403` en `auth check`, como ya establece F01.
 
@@ -117,7 +119,7 @@ Las políticas declaradas deben conceder las operaciones de autoinspección o au
 
 Las entidades admiten `name`, `policies` y `disabled`. Los grupos internos admiten `name`, `policies`, `member_entity_ids` y `member_group_ids`. El nombre es obligatorio; las políticas y los miembros pueden ser arrays vacíos. Los IDs son UUID y los miembros se limitan a 1000 por lista.
 
-Sin ID, `write` utiliza la creación por nombre de Vault, que puede actualizar un recurso existente con ese nombre. Con ID, verifica el recurso y lo actualiza explícitamente. Las listas de miembros representan la lista completa configurada. No se convierten grupos externos en internos de manera implícita.
+Sin ID, `write` utiliza la creación por nombre de Vault, que puede actualizar un recurso existente con ese nombre. Con ID, verifica el recurso y lo actualiza explícitamente. Las escrituras establecen toda la configuración admitida: omitir `policies` o una lista de miembros la vacía; omitir `disabled` establece `false`. Las listas de miembros representan la lista completa configurada. No se convierten grupos externos en internos de manera implícita.
 
 Los resultados se limitan a IDs, nombres, políticas, estado y miembros permitidos. Se excluyen metadatos, alias y campos arbitrarios del servidor. El `entity_id` devuelto por un login permite asociar la entidad creada por AppRole a un grupo interno con políticas adicionales.
 
@@ -157,7 +159,7 @@ Todos los comandos F06 quedan fuera del historial aprobado. Tab añade solamente
 El contrato y las pruebas preceden a la implementación. Además de formato, vet, pruebas con `-race`, compilación estática y regresión F00–F05, la fase debe demostrar:
 
 - Políticas y AppRoles contra Vault real, con acceso concedido a un secreto y denegado a otro.
-- Token de creación con políticas explícitas, sin herencia de privilegios del administrador.
+- Token de creación con políticas explícitas, sin heredar la lista de políticas del token administrativo; conservación documentada de la identidad del padre y de sus permisos de grupo.
 - Login sin el token del operador; SecretID revocado que impide otro login mientras el token ya emitido sigue funcionando; revocación posterior de ese token.
 - Entidad de login asociada a un grupo interno que concede la política esperada.
 - Validación íntegra antes de red, archivos exclusivos `0600`, conservación de archivos/enlaces existentes y compensación de fallos de escritura.

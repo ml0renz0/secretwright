@@ -1,6 +1,8 @@
 package cli_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/ml0renz0/secretwright/internal/cli"
 )
 
 func accessInputFile(t *testing.T, body string) string {
@@ -246,5 +250,82 @@ func TestCredentialPublicationFailureCompensatesWithoutDeletingAnotherFile(t *te
 	}
 	if contents, _ := os.ReadFile(destination); !reflect.DeepEqual(contents, []byte("replacement-file")) {
 		t.Error("credential cleanup removed or changed a file it no longer owned")
+	}
+}
+
+func TestUnknownIssuanceRemovesReservationWithoutRetry(t *testing.T) {
+	cleanEnvironment(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		accessReply(t, w, map[string]any{"auth": map[string]any{"client_token": "private-unrecoverable-token"}})
+	}))
+	defer server.Close()
+	t.Setenv("VAULT_ADDR", server.URL)
+	t.Setenv("VAULT_TOKEN", "private-operator-token")
+	destination := filepath.Join(t.TempDir(), "token")
+	spec := accessInputFile(t, `{"policies":["app"],"ttl":"1m","explicit_max_ttl":"2m"}`)
+	code, output, diagnostics := runWriteCLI(f03PanicReader{}, "token", "create", "--file", spec, "--out", destination)
+	if code != 5 || output != "" || diagnostics == "" || strings.Contains(diagnostics, "private-") || requests.Load() != 1 {
+		t.Error("unknown credential issuance was retried or exposed its incomplete response")
+	}
+	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+		t.Error("unknown credential issuance left its empty output reservation")
+	}
+}
+
+func TestFailedCredentialCompensationReturnsPartial(t *testing.T) {
+	cleanEnvironment(t)
+	destination := filepath.Join(t.TempDir(), "token")
+	var revoked atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/auth/token/create" {
+			if os.Remove(destination) != nil {
+				t.Error("could not simulate loss of the credential reservation")
+			}
+			accessReply(t, w, issuedAccessToken())
+			return
+		}
+		if r.URL.Path != "/v1/auth/token/revoke-accessor" {
+			t.Error("credential publication made an unexpected request")
+		}
+		revoked.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	t.Setenv("VAULT_ADDR", server.URL)
+	t.Setenv("VAULT_TOKEN", "private-operator-token")
+	spec := accessInputFile(t, `{"policies":["app"],"ttl":"1m","explicit_max_ttl":"2m"}`)
+	code, output, diagnostics := runWriteCLI(f03PanicReader{}, "token", "create", "--file", spec, "--out", destination)
+	if code != 5 || output != "" || diagnostics == "" || strings.Contains(diagnostics, "private-") || revoked.Load() != 1 {
+		t.Error("unconfirmed credential compensation did not return a safe partial outcome")
+	}
+	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+		t.Error("failed credential publication left an incomplete credential file")
+	}
+}
+
+func TestCommittedCredentialSurvivesReportWriterFailure(t *testing.T) {
+	cleanEnvironment(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.URL.Path != "/v1/auth/token/create" {
+			t.Error("report failure revoked an already committed credential")
+		}
+		accessReply(t, w, issuedAccessToken())
+	}))
+	defer server.Close()
+	t.Setenv("VAULT_ADDR", server.URL)
+	t.Setenv("VAULT_TOKEN", "private-operator-token")
+	destination := filepath.Join(t.TempDir(), "token")
+	spec := accessInputFile(t, `{"policies":["app"],"ttl":"1m","explicit_max_ttl":"2m"}`)
+	var diagnostics bytes.Buffer
+	code := cli.RunWithInput(context.Background(), []string{"token", "create", "--file", spec, "--out", destination}, f03PanicReader{}, failedWriter{}, &diagnostics, "test")
+	if code != 1 || requests.Load() != 1 || strings.Contains(diagnostics.String(), "private-") {
+		t.Error("failed report output changed the committed credential lifecycle")
+	}
+	if contents, err := os.ReadFile(destination); err != nil || string(contents) != "private-issued-token\n" {
+		t.Error("report failure removed the committed credential output")
 	}
 }
