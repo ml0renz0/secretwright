@@ -33,6 +33,9 @@ Connection options and --cwd belong at session startup. put requires --file FILE
 inside a session; use the one-shot put command to read JSON from stdin.
 Advanced operations use the same fixed connection; JSON files never consume
 commands from stdin. There is no command expansion, external shell or history file.
+Access commands use the fixed connection without a KV cwd. AppRole login does
+not send the operator token or replace it. Credential exports require --out FILE;
+all access commands stay out of history and never print issued credentials.
 `
 
 type shellOptions struct {
@@ -196,6 +199,12 @@ func (options shellOptions) execute(ctx context.Context, words []string, cwd str
 
 func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	position := 1
+	if words[0] == "policy" || words[0] == "approle" || words[0] == "token" || words[0] == "identity" {
+		_, _, position = accessCommandPrefix(words)
+		if position == 0 {
+			return append([]string(nil), words...)
+		}
+	}
 	if words[0] == "auth" && (len(words) < 2 || words[1] != "check") {
 		return append([]string(nil), words...)
 	}
@@ -207,7 +216,7 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	case "mounts", "ls", "cat", "cd", "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback",
 		"tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
 		kv = true
-	case "status", "auth":
+	case "status", "auth", "policy", "approle", "token", "identity":
 	default:
 		return append([]string(nil), words...)
 	}
@@ -221,7 +230,8 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	if value := options.network.vault.Timeout; value != nil {
 		args = append(args, "--timeout", value.String())
 	}
-	if words[0] != "status" && options.network.tokenFile != "" {
+	anonymous := words[0] == "approle" && len(words) > 1 && words[1] == "login"
+	if words[0] != "status" && !anonymous && options.network.tokenFile != "" {
 		args = append(args, "--token-file", options.network.tokenFile)
 	}
 	if kv && words[0] != "mounts" {
@@ -232,7 +242,9 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 
 func shellOverrides(words []string) bool {
 	start := 1
-	if words[0] == "auth" && len(words) > 1 && words[1] == "check" {
+	if _, _, depth := accessCommandPrefix(words); depth != 0 {
+		start = depth
+	} else if words[0] == "auth" && len(words) > 1 && words[1] == "check" {
 		start = 2
 	}
 	for i := start; i < len(words); i++ {
