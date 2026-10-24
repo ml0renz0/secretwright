@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F05 están integradas**: conexión, tokens, operaciones KV v1/v2, shell interactiva, operaciones recursivas y backup/restore. **F06 está implementada en la [PR #7](https://github.com/ml0renz0/secretwright/pull/7), pendiente de revisión y merge**, y añade políticas ACL, AppRoles, identidades y emisión/revocación de credenciales según su [contrato](docs/features/F06-access-identity-management.md). Los blueprints y la rotación pertenecen a fases posteriores.
+**F00–F06 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore y gestión de accesos e identidades. **F07 está en desarrollo** y añade el motor de blueprints YAML según su [contrato](docs/features/F07-blueprint-engine.md). Los templates de arquitectura, la reconciliación y la rotación pertenecen a fases posteriores.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -107,6 +107,21 @@ RoleID, SecretID y tokens se exportan únicamente a archivos nuevos con permisos
 La creación de tokens exige políticas explícitas y tiempos finitos. Vault conserva la identidad del padre en tokens hijos, por lo que sus permisos derivados de grupos pueden heredarse también. Borrar un SecretID o un rol no revoca los tokens emitidos; `token revoke` y `token revoke-self` requieren `--force` y revocan también descendientes. Las escrituras administrativas no tienen CAS.
 
 Si falla un archivo después de emitir una credencial, se intenta revocarla; una emisión o compensación sin confirmar devuelve `5`, sin volver a emitir automáticamente. Un archivo ya guardado se conserva si falla después el informe de stdout.
+
+## Blueprints YAML
+
+```bash
+./bin/secretwright blueprint schema
+./bin/secretwright blueprint validate --file examples/blueprints/app.yaml
+./bin/secretwright blueprint plan --file examples/blueprints/app.yaml --token-file admin-token
+./bin/secretwright blueprint apply --file examples/blueprints/app.yaml --token-file admin-token
+```
+
+El motor v1 administra montajes KV, políticas, AppRoles, entidades y grupos internos. El [ejemplo](examples/blueprints/app.yaml) usa variables tipadas y referencias entre recursos; `--vars examples/blueprints/values.yaml` proporciona overrides declarados. Requiere un montaje AppRole existente y permisos administrativos adecuados.
+
+`schema` y `validate` funcionan sin conexión. El esquema versionado se valida localmente y no carga URLs externas. Los planes y resultados contienen metadatos, sin HCL, specs, valores de variables ni credenciales.
+
+`apply` crea lo ausente y conserva lo equivalente. Si un recurso existente difiere, devuelve conflicto sin iniciar escrituras; no actualiza, adopta, elimina ni migra recursos. Después de aplicar, otro plan devuelve `changes: []`. Las operaciones no son atómicas: una aplicación parcial o incierta devuelve `5`, sin rollback ni reintentos automáticos. El [contrato de F07](docs/features/F07-blueprint-engine.md) detalla el formato y las garantías; la reconciliación queda para F09.
 
 ## Comprobar autenticación
 

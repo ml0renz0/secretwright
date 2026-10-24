@@ -35,6 +35,7 @@ func TestCompletionUsesCommandNamesWithoutConsultingVault(t *testing.T) {
 	}{
 		{line: "p", want: []string{"olicy ", "ut ", "wd "}},
 		{line: "ap", want: []string{"prole "}},
+		{line: "blu", want: []string{"eprint "}},
 		{line: "ident", want: []string{"ity "}},
 		{line: "tok", want: []string{"en "}},
 		{line: "q", want: []string{"uit "}},
@@ -115,6 +116,7 @@ func TestCompletionSkipsOptionValuesQuotedInputAndNonPathArguments(t *testing.T)
 		"ls --namespace team /secret/ap", `ls "/secret/ap`, `ls /secret/a\p`,
 		"ls /secret | cat", "rollback /secret/app 2", "auth check ", "status ", "history ",
 		"shell ", "cp /secret/a /secret/b extra", "unknown /secret/",
+		"blueprint plan ", "blueprint validate --file /tmp/",
 	} {
 		line := []rune(text)
 		got, _ := shell.Complete(context.Background(), line, len(line), "/", list)

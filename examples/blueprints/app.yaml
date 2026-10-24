@@ -1,0 +1,51 @@
+api_version: secretwright/v1
+name: ${var.prefix}
+variables:
+  prefix:
+    type: string
+    default: demo-app
+  auth_mount:
+    type: string
+    default: approle
+  secret_uses:
+    type: integer
+    default: 1
+resources:
+  - id: storage
+    kind: kv_mount
+    name: ${var.prefix}
+    spec:
+      version: 2
+  - id: read_policy
+    kind: policy
+    name: ${var.prefix}-read
+    depends_on: [storage]
+    spec:
+      policy: |
+        path "${var.prefix}/data/app/*" {
+          capabilities = ["read"]
+        }
+  - id: app_role
+    kind: approle
+    name: ${var.prefix}
+    depends_on: [read_policy]
+    spec:
+      auth_mount: ${var.auth_mount}
+      token_policies: ["${var.prefix}-read"]
+      token_ttl: 5m
+      token_max_ttl: 1h
+      secret_id_ttl: 10m
+      secret_id_num_uses: "${var.secret_uses}"
+  - id: app_entity
+    kind: entity
+    name: ${var.prefix}
+    spec:
+      policies: []
+      disabled: false
+  - id: app_group
+    kind: group
+    name: ${var.prefix}-team
+    depends_on: [read_policy]
+    spec:
+      policies: ["${var.prefix}-read"]
+      member_entities: [app_entity]
