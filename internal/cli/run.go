@@ -41,6 +41,10 @@ Usage:
   secretwright rmtree [options] PATH  Delete captured snapshots under a subtree
   secretwright backup --file OUTPUT.json [options] PATH  Save a private archive
   secretwright restore --file INPUT.json [options] DEST  Restore current snapshots
+  secretwright policy ACTION       Manage ACL policy configuration
+  secretwright approle ACTION      Manage AppRoles and private credentials
+  secretwright token ACTION        Create/revoke tokens or query self capabilities
+  secretwright identity entity|group ACTION  Manage entities and internal groups
 
 Network options (after the command, before a path):
   --address URL           Override VAULT_ADDR and VAULT_AGENT_ADDR
@@ -75,7 +79,9 @@ KV exit codes: 0 success; 2 no token or permission denied; 3 path not found;
 4 version conflict; 5 partial/uncertain bulk mutation or partial move;
 130 canceled operation; 1 configuration, request, or output error.
 
-Tokens are not accepted as command-line arguments or saved to disk.
+Tokens are not accepted as command-line arguments. Access commands export
+credentials only to explicitly selected new private files with mode 0600.
+Login and issuance never change the environment or the selected session token.
 cat prints requested secret values to standard output.
 put reads one nonempty JSON object, at most 1 MiB; it replaces all values.
 KV v2 put/cp/mv create by default; --cas N permits a matching revision update.
@@ -146,6 +152,8 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		return kvCommand(ctx, args[0], args[1:], stdout, stderr)
 	case "tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
 		return kvAdvancedCommand(ctx, args[0], args[1:], stdout, stderr)
+	case "policy", "approle", "token", "identity":
+		return accessCommand(ctx, args, stdout, stderr)
 	case "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback":
 		return kvWriteCommand(ctx, args[0], args[1:], stdin, stdout, stderr)
 	case "auth":
