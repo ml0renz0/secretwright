@@ -529,3 +529,5 @@ python3 ./scripts/shell_smoke.py "$fixture_dir/secretwright-shell-race" "$fixtur
 python3 ./scripts/advanced_smoke.py ./bin/secretwright "$fixture_dir"
 
 python3 ./scripts/access_smoke.py ./bin/secretwright "$fixture_dir"
+
+python3 ./scripts/blueprint_smoke.py ./bin/secretwright "$fixture_dir"
