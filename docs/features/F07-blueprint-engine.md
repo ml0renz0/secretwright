@@ -48,6 +48,8 @@ resources:
 
 El esquema publicado es `schemas/blueprint-v1.schema.json`, con identificador `urn:secretwright:blueprint:v1` y Draft 2020-12. El binario utiliza ese mismo archivo embebido para validar en tiempo de ejecución. No carga esquemas, referencias ni metadatos desde URLs o archivos externos; las referencias del esquema son internas.
 
+La raíz del esquema valida el documento después de resolver las variables. El fragmento `#/$defs/envelope` valida la estructura inicial de una plantilla; después de expandirla, el motor aplica el esquema completo y las comprobaciones semánticas. Para validar un archivo con `${var.NAME}`, utiliza `blueprint validate`, que realiza ambos pasos.
+
 Se rechazan campos desconocidos, tipos incorrectos, nombres inválidos y documentos con claves duplicadas, incluso dentro de los recursos. YAML y JSON pasan por el mismo lector. No se admiten anchors, aliases, merges, tags personalizados, timestamps, binarios, claves de mapa no string ni varios documentos. Los números deben ser enteros decimales dentro de `int64`; no se admiten exponentes, flotantes ni bases alternativas antes de validar el esquema.
 
 La validación incluye la sintaxis HCL de las políticas y los controles tipados de F06. La validación semántica final de ACL y las autorizaciones siguen dependiendo de Vault; `validate` no acredita acceso al servidor.
