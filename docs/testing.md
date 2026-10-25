@@ -10,7 +10,7 @@ Estas pruebas incluyen servidores HTTP y backends controlados para provocar erro
 
 ## Fuzzing
 
-Dos jobs generan entradas adversariales durante 20 segundos cada uno, con el detector de carreras y dos workers. Las semillas del corpus se ejecutan también como regresiones en `make test`.
+Dos jobs generan entradas adversariales durante 20 segundos cada uno, con el detector de carreras y dos workers. La minimización de cada entrada se limita a 100 ms para reservar el presupuesto de CI a explorar más casos. Las semillas del corpus se ejecutan también como regresiones en `make test`.
 
 | Objetivo | Propiedades comprobadas |
 | --- | --- |
@@ -20,8 +20,8 @@ Dos jobs generan entradas adversariales durante 20 segundos cada uno, con el det
 Se pueden ampliar localmente:
 
 ```bash
-go test -race -run='^$' -fuzz='^FuzzLoad$' -fuzztime=2m -parallel=2 ./internal/blueprint
-go test -race -run='^$' -fuzz='^FuzzResolvePath$' -fuzztime=2m -parallel=2 ./internal/vault
+go test -race -run='^$' -fuzz='^FuzzLoad$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/blueprint
+go test -race -run='^$' -fuzz='^FuzzResolvePath$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/vault
 ```
 
 Si el fuzzer encuentra un fallo, Go guarda la entrada en `testdata/fuzz`; Actions conserva ese corpus como artefacto durante siete días. Para reproducirlo se utiliza el comando que imprime Go. El presupuesto de CI es acotado y no sustituye las regresiones explícitas de las operaciones de escritura.

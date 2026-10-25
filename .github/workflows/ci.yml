@@ -60,7 +60,7 @@ jobs:
       - name: Download locked dependencies
         run: go mod download
       - name: Exercise generated adversarial inputs
-        run: go test -race -run='^$' -fuzz='^${{ matrix.function }}$' -fuzztime=20s -parallel=2 ${{ matrix.package }}
+        run: go test -race -run='^$' -fuzz='^${{ matrix.function }}$' -fuzztime=20s -fuzzminimizetime=100ms -parallel=2 ${{ matrix.package }}
       - name: Preserve a failing input for reproduction
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
