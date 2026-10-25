@@ -1,0 +1,8 @@
+api_version: secretwright/v1
+name: reconciliation-demo
+resources:
+  - id: storage
+    kind: kv_mount
+    name: reconciliation-demo
+    spec:
+      version: 2
