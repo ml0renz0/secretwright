@@ -35,6 +35,41 @@ jobs:
           git diff --exit-code -- go.mod go.sum
       - run: make check
 
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: blueprint
+            package: ./internal/blueprint
+            function: FuzzLoad
+          - target: logical-paths
+            package: ./internal/vault
+            function: FuzzResolvePath
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Download locked dependencies
+        run: go mod download
+      - name: Exercise generated adversarial inputs
+        run: go test -race -run='^$' -fuzz='^${{ matrix.function }}$' -fuzztime=20s -parallel=2 ${{ matrix.package }}
+      - name: Preserve a failing input for reproduction
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-failure-${{ matrix.target }}
+          path: internal/**/testdata/fuzz/**
+          if-no-files-found: ignore
+          retention-days: 7
+
   integration:
     name: Real Vault integration
     runs-on: ubuntu-24.04
