@@ -356,4 +356,3 @@ func TestBlueprintSchemaReportsShortWrites(t *testing.T) {
 		t.Error("blueprint schema silently accepted a truncated output")
 	}
 }
-
