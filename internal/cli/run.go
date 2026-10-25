@@ -46,6 +46,7 @@ Usage:
   secretwright token ACTION        Create/revoke tokens or query self capabilities
   secretwright identity entity|group ACTION  Manage entities and internal groups
   secretwright blueprint schema|validate|plan|apply  Manage declarative resources
+  secretwright template list|show|schema|render  Render architecture blueprints offline
 
 Network options (after the command, before a path):
   --address URL           Override VAULT_ADDR and VAULT_AGENT_ADDR
@@ -99,6 +100,8 @@ after partial failure; there is no automatic rollback.
 Blueprint schema/validate run offline. Plan/apply inspect declared resources;
 apply creates only missing resources and rejects existing differences. Plans
 contain metadata, without specs or variable values; no deletion or migration.
+Template commands are offline and generate configuration for blueprint review.
+Rendering includes ACL/spec content; user entities need external login bindings.
 `
 
 const statusUsage = `Usage: secretwright status [--address URL] [--namespace NAME] [--timeout DURATION]
@@ -159,6 +162,8 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		return accessCommand(ctx, args, stdout, stderr)
 	case "blueprint":
 		return blueprintCommand(ctx, args, stdout, stderr)
+	case "template":
+		return templateCommand(args, stdout, stderr)
 	case "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback":
 		return kvWriteCommand(ctx, args[0], args[1:], stdin, stdout, stderr)
 	case "auth":

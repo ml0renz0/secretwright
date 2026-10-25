@@ -1,0 +1,8 @@
+api_version: secretwright/architecture/v1
+name: team
+instances:
+  - id: main
+    template: multi-user
+    mount: team
+    users: [alice, bob]
+    access: read-write

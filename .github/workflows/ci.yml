@@ -46,6 +46,9 @@ jobs:
           - target: blueprint
             package: ./internal/blueprint
             function: FuzzLoad
+          - target: architecture-templates
+            package: ./internal/architecture
+            function: FuzzRender
           - target: logical-paths
             package: ./internal/vault
             function: FuzzResolvePath

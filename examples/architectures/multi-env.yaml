@@ -1,0 +1,10 @@
+api_version: secretwright/architecture/v1
+name: platform
+instances:
+  - id: main
+    template: multi-env
+    mount: platform
+    applications: [api, worker]
+    environments: [dev, prod]
+    auth_mount: approle
+    access: read-write

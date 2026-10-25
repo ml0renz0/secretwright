@@ -1,0 +1,11 @@
+api_version: secretwright/architecture/v1
+name: saas
+instances:
+  - id: main
+    template: saas
+    mount: saas
+    tenants: [acme, globex]
+    environments: [dev, prod]
+    applications: [api, worker]
+    auth_mount: approle
+    access: read
