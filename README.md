@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F07 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, gestión de accesos e identidades y motor de blueprints YAML según su [contrato](docs/features/F07-blueprint-engine.md). Los templates de arquitectura, la reconciliación y la rotación pertenecen a fases posteriores.
+**F00–F07 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, gestión de accesos e identidades y motor de blueprints YAML según su [contrato](docs/features/F07-blueprint-engine.md). **F08 está en desarrollo** y añade [templates de arquitectura](docs/features/F08-architecture-templates.md). La reconciliación y la rotación pertenecen a fases posteriores.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -122,6 +122,20 @@ El motor v1 administra montajes KV, políticas, AppRoles, entidades y grupos int
 `schema` y `validate` funcionan sin conexión. El esquema versionado se valida localmente y no carga URLs externas. Los planes y resultados contienen metadatos, sin HCL, specs, valores de variables ni credenciales.
 
 `apply` crea lo ausente y conserva lo equivalente. Si un recurso existente difiere, devuelve conflicto sin iniciar escrituras; no actualiza, adopta, elimina ni migra recursos. Después de aplicar, otro plan devuelve `changes: []`. Las operaciones no son atómicas: una aplicación parcial o incierta devuelve `5`, sin rollback ni reintentos automáticos. El [contrato de F07](docs/features/F07-blueprint-engine.md) detalla el formato y las garantías; la reconciliación queda para F09.
+
+## Templates de arquitectura
+
+```bash
+./bin/secretwright template list
+./bin/secretwright template show single-app
+./bin/secretwright template schema
+./bin/secretwright template render --file examples/architectures/multi-env.yaml > platform.blueprint.json
+./bin/secretwright blueprint validate --file platform.blueprint.json
+```
+
+El catálogo cubre `single-user`, `multi-user`, `single-app`, `multi-app`, `multi-env` y `saas`. Render funciona offline y produce un blueprint F07 completo para revisar y aplicar después. Cada scope recibe una política propia; las aplicaciones reciben AppRoles y los usuarios entidades y grupos. Los usuarios necesitan un enlace de autenticación externo explícito: render no vincula identidades ni emite credenciales.
+
+Un manifiesto puede componer patrones y compartir un montaje KV v2, manteniendo scopes separados por instancia. El [ejemplo compuesto](examples/architectures/composed-shared-mount.yaml) muestra usuarios y aplicaciones con montaje común. Se rechazan montajes solapados, colisiones y expansiones que superen los 128 recursos. Los ejemplos y el [contrato de F08](docs/features/F08-architecture-templates.md) detallan dimensiones, permisos y límites.
 
 ## Comprobar autenticación
 
@@ -284,7 +298,7 @@ El laboratorio utiliza Docker o un ejecutable `vault` ya instalado y elimina los
 
 `make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md), [F02](docs/features/F02-kv-read-navigation.md), [F03](docs/features/F03-kv-write-versioning.md) y [F04](docs/features/F04-interactive-shell.md) detallan los escenarios.
 
-La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias con detector de carreras, compilación, fuzzing de blueprints y rutas, y pruebas de integración contra Vault efímero. Incluye el ejecutable con pseudoterminal para navegación, Tab, Ctrl+R e interrupciones, con capturas privadas. La [guía de pruebas](docs/testing.md) detalla escenarios, comandos de reproducción y límites de cobertura.
+La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias con detector de carreras, compilación, fuzzing de blueprints, arquitecturas y rutas, y pruebas de integración contra Vault efímero. Incluye el ejecutable con pseudoterminal para navegación, Tab, Ctrl+R e interrupciones, con capturas privadas. La [guía de pruebas](docs/testing.md) detalla escenarios, comandos de reproducción y límites de cobertura.
 
 ## Cómo avanzará el proyecto
 
@@ -296,6 +310,10 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F02](docs/features/F02-kv-read-navigation.md)
 - [Contrato de F03](docs/features/F03-kv-write-versioning.md)
 - [Contrato de F04](docs/features/F04-interactive-shell.md)
+- [Contrato de F05](docs/features/F05-advanced-secret-operations.md)
+- [Contrato de F06](docs/features/F06-access-identity-management.md)
+- [Contrato de F07](docs/features/F07-blueprint-engine.md)
+- [Contrato de F08](docs/features/F08-architecture-templates.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 
