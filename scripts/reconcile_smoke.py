@@ -72,7 +72,9 @@ def main():
         if args[:2] != ['approle', 'login']:
             injected += ['--token-file', str(root_file)]
         command = [str(binary), *args[:depth], *injected, *args[depth:]]
-        output, error = fixture / ('f09-' + name + '.json'), fixture / ('f09-' + name + '.err')
+        # Captures have their own namespace so a check cannot reuse an input
+        # inventory filename reserved by the fixture.
+        output, error = fixture / ('f09-capture-' + name + '.json'), fixture / ('f09-capture-' + name + '.err')
         descriptors = [os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600) for path in [output, error]]
         captures.extend([output, error])
         with os.fdopen(descriptors[0], 'w') as stdout, os.fdopen(descriptors[1], 'w') as stderr:
