@@ -1,0 +1,9 @@
+api_version: secretwright/architecture/v1
+name: services
+instances:
+  - id: main
+    template: multi-app
+    mount: services
+    applications: [api, worker]
+    auth_mount: approle
+    access: read

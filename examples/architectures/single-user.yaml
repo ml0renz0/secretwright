@@ -1,0 +1,8 @@
+api_version: secretwright/architecture/v1
+name: personal
+instances:
+  - id: main
+    template: single-user
+    mount: personal
+    users: [alice]
+    access: read

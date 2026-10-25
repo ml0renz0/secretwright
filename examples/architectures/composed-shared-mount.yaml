@@ -1,0 +1,15 @@
+api_version: secretwright/architecture/v1
+name: composed
+instances:
+  - id: people
+    template: multi-user
+    mount: shared-kv
+    users: [alice, bob]
+    access: read
+  - id: services
+    template: multi-env
+    mount: shared-kv
+    applications: [api, worker]
+    environments: [dev, prod]
+    auth_mount: approle
+    access: read-write
