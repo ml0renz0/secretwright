@@ -36,6 +36,8 @@ commands from stdin. There is no command expansion, external shell or history fi
 Access commands use the fixed connection without a KV cwd. AppRole login does
 not send the operator token or replace it. Credential exports require --out FILE;
 all access commands stay out of history and never print issued credentials.
+Template commands remain offline, ignore the session's KV cwd and credentials,
+and stay out of history. Rendered configuration is reviewed with blueprint.
 `
 
 type shellOptions struct {
@@ -198,6 +200,9 @@ func (options shellOptions) execute(ctx context.Context, words []string, cwd str
 }
 
 func (options shellOptions) commandArgs(words []string, cwd string) []string {
+	if words[0] == "template" {
+		return append([]string(nil), words...)
+	}
 	position := 1
 	if words[0] == "blueprint" {
 		action, depth := blueprintCommandPrefix(words)
@@ -252,6 +257,8 @@ func shellOverrides(words []string) bool {
 	if _, _, depth := accessCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if _, depth := blueprintCommandPrefix(words); depth != 0 {
+		start = depth
+	} else if _, depth := templateCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if words[0] == "auth" && len(words) > 1 && words[1] == "check" {
 		start = 2

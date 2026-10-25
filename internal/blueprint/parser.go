@@ -15,6 +15,21 @@ import (
 
 var decimalInteger = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
 
+// DecodeConfiguration shares the bounded, JSON-compatible YAML reader with
+// offline configuration formats that validate their own versioned schema.
+// It does not expand variables, read external references, or access Vault.
+func DecodeConfiguration(input io.Reader) (map[string]any, error) {
+	value, err := readDocument(input)
+	if err != nil {
+		return nil, ErrInvalidBlueprint
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, ErrInvalidBlueprint
+	}
+	return object, nil
+}
+
 // Load accepts one bounded YAML or JSON document. It never loads includes,
 // environment values, external schemas, functions, or Vault secret data.
 func Load(input io.Reader, overrides io.Reader) (Document, error) {

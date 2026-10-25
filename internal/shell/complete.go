@@ -18,7 +18,7 @@ type Lister func(context.Context, string, string) ([]string, error)
 var completionCommands = []string{
 	"approle", "auth", "backup", "blueprint", "cat", "cd", "cp", "cptree", "destroy", "exit", "find",
 	"help", "history", "identity", "ls", "mounts", "mv", "policy", "put", "pwd", "quit", "replace",
-	"restore", "rm", "rmtree", "rollback", "status", "token", "tree", "undelete", "version", "versions",
+	"restore", "rm", "rmtree", "rollback", "status", "template", "token", "tree", "undelete", "version", "versions",
 }
 
 // Complete returns suffixes for readline's API. Completion never reads secret
