@@ -70,7 +70,9 @@ func f08Reject(t *testing.T, input []byte) {
 
 type f08DenyLoader struct{}
 
-func (f08DenyLoader) Load(string) (any, error) { return nil, errors.New("external schema load forbidden") }
+func (f08DenyLoader) Load(string) (any, error) {
+	return nil, errors.New("external schema load forbidden")
+}
 
 func TestArchitectureCatalogExamplesAndPublishedSchemaStayUsable(t *testing.T) {
 	want := []string{"multi-app", "multi-env", "multi-user", "saas", "single-app", "single-user"}
@@ -285,9 +287,9 @@ func TestArchitectureACLAndIdentityGrantsRemainInsideEachScope(t *testing.T) {
 			prefix := "shared/kv/"
 			scope := "platform/people/users/alice"
 			want := map[string][]string{
-				prefix + "data/" + scope:           capabilities,
-				prefix + "data/" + scope + "/*":    capabilities,
-				prefix + "metadata/" + scope:       {"list"},
+				prefix + "data/" + scope:            capabilities,
+				prefix + "data/" + scope + "/*":     capabilities,
+				prefix + "metadata/" + scope:        {"list"},
 				prefix + "metadata/" + scope + "/*": {"read", "list"},
 			}
 			if !reflect.DeepEqual(f08PolicyPaths(t, policy.Spec["policy"].(string)), want) {

@@ -31,10 +31,10 @@ import (
 )
 
 type architectureFixture struct {
-	admin *api.Client
-	control, observed *vault.Client
+	admin                               *api.Client
+	control, observed                   *vault.Client
 	issuer, name, mount, auth, accessor string
-	writes atomic.Int32
+	writes                              atomic.Int32
 }
 
 func newArchitectureFixture(t *testing.T) *architectureFixture {
@@ -100,7 +100,7 @@ func newArchitectureFixture(t *testing.T) *architectureFixture {
 
 type architectureScope struct {
 	path, access string
-	user bool
+	user         bool
 }
 
 func architectureDigest(scope string) string {

@@ -57,13 +57,16 @@ def main():
         output, diagnostic = fixture / ('f08-' + name + '.json'), fixture / ('f08-' + name + '.err')
         command = [str(binary), *arguments]
         if online:
-            command = command[:3] + ['--address', address, '--namespace', '', '--timeout', '1m', '--token-file', str(root_file)] + command[3:]
+            injected = ['--address', address, '--namespace', '', '--timeout', '1m']
+            if arguments[:2] != ['approle', 'login']:
+                injected += ['--token-file', str(root_file)]
+            command = command[:3] + injected + command[3:]
         descriptors = [os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600) for path in [output, diagnostic]]
         captures.extend([output, diagnostic])
         with os.fdopen(descriptors[0], 'w') as stdout, os.fdopen(descriptors[1], 'w') as stderr:
             result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, env=environment if online else offline, cwd=fixture, timeout=30)
         body, errors = output.read_text(), diagnostic.read_text()
-        require(result.returncode == expected, 'Architecture CLI returned an unexpected exit code.')
+        require(result.returncode == expected, 'Architecture CLI returned an unexpected exit code [check=' + name + '].')
         require((not errors) if expected == 0 else bool(errors), 'Architecture CLI emitted unexpected diagnostics.')
         require(all(value not in body + errors for value in forbidden), 'Architecture CLI exposed a credential, secret, or rejected input.')
         documents = decode_documents(body)
