@@ -103,7 +103,7 @@ func TestIntegrationManagedUpdatesPreserveUnmanagedFieldsAndEffectiveAccess(t *t
 	rolePath := "auth/" + fixture.auth + "/role/" + roleName
 	for path, body := range map[string]map[string]any{
 		"identity/entity/id/" + entityID: {"name": fixture.prefix + "-entity", "policies": []string{}, "disabled": false, "metadata": map[string]string{"fixture": "private-f09-entity-metadata"}},
-		"identity/group/id/" + groupID: {"name": fixture.prefix + "-base", "type": "internal", "policies": []string{policyName}, "member_entity_ids": []string{entityID}, "metadata": map[string]string{"fixture": "private-f09-group-metadata"}},
+		"identity/group/id/" + groupID:   {"name": fixture.prefix + "-base", "type": "internal", "policies": []string{policyName}, "member_entity_ids": []string{entityID}, "metadata": map[string]string{"fixture": "private-f09-group-metadata"}},
 		rolePath: {
 			"token_policies": []string{policyName}, "token_ttl": 120, "token_max_ttl": 300,
 			"secret_id_ttl": 120, "secret_id_num_uses": 5, "token_num_uses": 0,

@@ -41,7 +41,7 @@ func ApplyManaged(ctx context.Context, document Document, backend ManagedBackend
 	changed := false
 	for index, resource := range ordered {
 		if err := ctx.Err(); err != nil {
-			return failedManagedApply(report, index, "failed", err, changed)
+			return managedOutcome(report, err, changed)
 		}
 		current, err := backend.Inspect(ctx, copyResource(resource), copyRemoteIDs(knownIDs))
 		if err != nil {

@@ -45,7 +45,7 @@ Usage:
   secretwright approle ACTION      Manage AppRoles and private credentials
   secretwright token ACTION        Create/revoke tokens or query self capabilities
   secretwright identity entity|group ACTION  Manage entities and internal groups
-  secretwright blueprint schema|validate|plan|apply  Manage declarative resources
+  secretwright blueprint schema|validate|plan|apply|adopt|recover  Manage declarative resources
   secretwright template list|show|schema|render  Render architecture blueprints offline
 
 Network options (after the command, before a path):

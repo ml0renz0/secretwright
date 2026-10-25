@@ -2,7 +2,7 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00–F08 están integradas. F09 está en desarrollo según su [contrato](features/F09-reconciliation-drift.md). F10 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
+F00–F08 están integradas. F09 está implementada en la [PR #11](https://github.com/ml0renz0/secretwright/pull/11), pendiente de revisión y merge, según su [contrato](features/F09-reconciliation-drift.md). F10 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
@@ -15,7 +15,7 @@ F00–F08 están integradas. F09 está en desarrollo según su [contrato](featur
 | **F06** | **Access & Identity Management** | Políticas ACL, AppRoles, RoleID/SecretID, gestión de identidades, permisos, emisión y revocación de credenciales. | Integrada — [PR #7](https://github.com/ml0renz0/secretwright/pull/7), [contrato](features/F06-access-identity-management.md) |
 | **F07** | **Forge: Blueprint Engine** | Descriptor YAML, JSON Schema, variables, dependencias, `validate`, `plan`, `apply` e idempotencia. | Integrada — [PR #8](https://github.com/ml0renz0/secretwright/pull/8), [contrato](features/F07-blueprint-engine.md) |
 | **F08** | **Forge: Architecture Templates** | Blueprints monousuario, multiusuario, monoapp, multiapp, multientorno y SaaS multi-tenant. Composición de patrones. | Integrada — [PR #10](https://github.com/ml0renz0/secretwright/pull/10), [contrato](features/F08-architecture-templates.md) |
-| **F09** | **Forge: Reconciliation & Drift** | Inventario local de propiedad, adopción explícita, cambios deseados, drift bloqueado por defecto, reparación autorizada, recursos retenidos y recuperación de checkpoints. | En desarrollo — [contrato](features/F09-reconciliation-drift.md) |
+| **F09** | **Forge: Reconciliation & Drift** | Inventario local de propiedad, adopción explícita, cambios deseados, drift bloqueado por defecto, reparación autorizada, recursos retenidos y recuperación de checkpoints. | Implementada, pendiente de merge — [PR #11](https://github.com/ml0renz0/secretwright/pull/11), [contrato](features/F09-reconciliation-drift.md) |
 | **F10** | **Secrets Lifecycle & Rotation** | Rotación de credenciales, TTL, leases, políticas de mantenimiento, adaptadores externos y recuperación ante fallos. | Pendiente |
 | **F11** | **X.509 & PKI Management** | Gestión y análisis de certificados, claves privadas, SAN, caducidades y validación criptográfica mediante Go, sin OpenSSL externo. | Pendiente |
 | **F12** | **Kerberos & Keytab Management** | Lectura y validación de keytabs, principales, KVNO, tipos de cifrado e integración con Vault, sin `klist` externo. | Pendiente |

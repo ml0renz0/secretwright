@@ -14,7 +14,9 @@ import (
 var managedHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func copyManagedState(state managedstate.State) managedstate.State {
-	state.Resources = append([]managedstate.Record{}, state.Resources...)
+	if state.Resources != nil {
+		state.Resources = append([]managedstate.Record{}, state.Resources...)
+	}
 	return state
 }
 

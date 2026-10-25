@@ -137,7 +137,9 @@ func TestStateValidationRejectsAmbiguousOwnershipAndInvalidPendingRecords(t *tes
 		{"missing cluster", func(s *managedstate.State) { s.Target.ClusterID = "" }},
 		{"unsafe namespace", func(s *managedstate.State) { s.Target.Namespace = "private-team\n" }},
 		{"duplicate logical ID", func(s *managedstate.State) { s.Resources[1].ID = s.Resources[0].ID }},
-		{"duplicate locator", func(s *managedstate.State) { s.Resources = append(s.Resources, managedstate.Record{ID: "other", Kind: "policy", Name: "app-read", Fingerprint: strings.Repeat("a", 64)}) }},
+		{"duplicate locator", func(s *managedstate.State) {
+			s.Resources = append(s.Resources, managedstate.Record{ID: "other", Kind: "policy", Name: "app-read", Fingerprint: strings.Repeat("a", 64)})
+		}},
 		{"unknown kind", func(s *managedstate.State) { s.Resources[0].Kind = "private-kind" }},
 		{"unsafe logical ID", func(s *managedstate.State) { s.Resources[0].ID = "private/id" }},
 		{"unsafe name", func(s *managedstate.State) { s.Resources[0].Name = "private*name" }},
@@ -392,7 +394,7 @@ func TestStateCloseNeverRemovesAReplacedLockAndFailedOpenCleansOnlyItsOwnLock(t 
 	if held, err := managedstate.Lock(broken); held != nil || err == nil {
 		t.Error("writer acquired an invalid inventory")
 	}
-	if _, err := os.Lstat(broken+".lock"); !os.IsNotExist(err) {
+	if _, err := os.Lstat(broken + ".lock"); !os.IsNotExist(err) {
 		t.Error("failed state load left an owned lock behind")
 	}
 }

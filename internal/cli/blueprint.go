@@ -51,13 +51,13 @@ there is no automatic rollback or retry.
 var errReadBlueprint = errors.New("could not read the blueprint or variables file")
 
 type blueprintCommandOptions struct {
-	action    string
-	file      string
-	variables string
-	state     string
-	repair    bool
+	action       string
+	file         string
+	variables    string
+	state        string
+	repair       bool
 	adoptPending bool
-	network   networkOptions
+	network      networkOptions
 }
 
 // Share the command depth with shell injection and override detection. Only

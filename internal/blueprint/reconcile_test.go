@@ -31,11 +31,11 @@ func f09Clone(state managedstate.State) managedstate.State {
 }
 
 type f09Sink struct {
-	t       *testing.T
-	state   managedstate.State
-	saved   []managedstate.State
-	events  *[]string
-	fail    func(int, managedstate.State) error
+	t      *testing.T
+	state  managedstate.State
+	saved  []managedstate.State
+	events *[]string
+	fail   func(int, managedstate.State) error
 }
 
 func (sink *f09Sink) Snapshot() managedstate.State { return f09Clone(sink.state) }
