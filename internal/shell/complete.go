@@ -16,7 +16,7 @@ import (
 type Lister func(context.Context, string, string) ([]string, error)
 
 var completionCommands = []string{
-	"approle", "auth", "backup", "cat", "cd", "cp", "cptree", "destroy", "exit", "find",
+	"approle", "auth", "backup", "blueprint", "cat", "cd", "cp", "cptree", "destroy", "exit", "find",
 	"help", "history", "identity", "ls", "mounts", "mv", "policy", "put", "pwd", "quit", "replace",
 	"restore", "rm", "rmtree", "rollback", "status", "token", "tree", "undelete", "version", "versions",
 }

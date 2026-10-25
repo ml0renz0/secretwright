@@ -1,0 +1,483 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:secretwright:blueprint:v1",
+  "title": "Secretwright blueprint v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "api_version": {
+      "const": "secretwright/v1"
+    },
+    "name": {
+      "$ref": "#/$defs/name"
+    },
+    "variables": {
+      "$ref": "#/$defs/variables"
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    }
+  },
+  "required": [
+    "api_version",
+    "name",
+    "resources"
+  ],
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "mount": {
+      "type": "string",
+      "maxLength": 1024,
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}(/[a-z0-9][a-z0-9_.-]{0,127})*$"
+    },
+    "variable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "boolean"
+          ]
+        },
+        "default": {
+          "type": [
+            "string",
+            "integer",
+            "boolean"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "default": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "integer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "default": {
+                "type": "integer",
+                "minimum": -9223372036854775808,
+                "maximum": 9223372036854775807
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "boolean"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "default": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "variables": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/variable"
+      }
+    },
+    "resourceTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "kv_mount",
+            "policy",
+            "approle",
+            "entity",
+            "group"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 131072
+        },
+        "depends_on": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "spec": {
+          "type": "object",
+          "maxProperties": 32
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "spec"
+      ]
+    },
+    "resource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "kv_mount"
+            },
+            "name": {
+              "$ref": "#/$defs/mount"
+            },
+            "depends_on": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "spec": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "version": {
+                  "enum": [
+                    1,
+                    2
+                  ]
+                }
+              },
+              "required": [
+                "version"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "name",
+            "spec"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "policy"
+            },
+            "name": {
+              "$ref": "#/$defs/name"
+            },
+            "depends_on": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "spec": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "policy": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 131072
+                }
+              },
+              "required": [
+                "policy"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "name",
+            "spec"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "approle"
+            },
+            "name": {
+              "$ref": "#/$defs/name"
+            },
+            "depends_on": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "spec": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "auth_mount": {
+                  "$ref": "#/$defs/mount"
+                },
+                "token_policies": {
+                  "type": "array",
+                  "maxItems": 128,
+                  "items": {
+                    "$ref": "#/$defs/name"
+                  },
+                  "minItems": 1
+                },
+                "token_ttl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "token_max_ttl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "secret_id_ttl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "secret_id_num_uses": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "token_num_uses": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000
+                }
+              },
+              "required": [
+                "token_policies",
+                "token_ttl",
+                "token_max_ttl",
+                "secret_id_ttl",
+                "secret_id_num_uses"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "name",
+            "spec"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "entity"
+            },
+            "name": {
+              "$ref": "#/$defs/name"
+            },
+            "depends_on": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "spec": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "policies": {
+                  "type": "array",
+                  "maxItems": 128,
+                  "items": {
+                    "$ref": "#/$defs/name"
+                  }
+                },
+                "disabled": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "name",
+            "spec"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "kind": {
+              "const": "group"
+            },
+            "name": {
+              "$ref": "#/$defs/name"
+            },
+            "depends_on": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "spec": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "policies": {
+                  "type": "array",
+                  "maxItems": 128,
+                  "items": {
+                    "$ref": "#/$defs/name"
+                  }
+                },
+                "member_entity_ids": {
+                  "type": "array",
+                  "maxItems": 1000,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  }
+                },
+                "member_group_ids": {
+                  "type": "array",
+                  "maxItems": 1000,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  }
+                },
+                "member_entities": {
+                  "type": "array",
+                  "maxItems": 128,
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  }
+                },
+                "member_groups": {
+                  "type": "array",
+                  "maxItems": 128,
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "name",
+            "spec"
+          ]
+        }
+      ]
+    },
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "const": "secretwright/v1"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 131072
+        },
+        "variables": {
+          "$ref": "#/$defs/variables"
+        },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/resourceTemplate"
+          }
+        }
+      },
+      "required": [
+        "api_version",
+        "name",
+        "resources"
+      ]
+    }
+  }
+}

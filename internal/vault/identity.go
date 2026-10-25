@@ -206,10 +206,18 @@ func readEntityIdentity(ctx context.Context, client *api.Client, id string) (Ent
 	if err != nil {
 		return EntityReport{}, err
 	}
+	return parseEntityIdentity(secret, id, "")
+}
+
+func parseEntityIdentity(secret *api.Secret, expectedID, expectedName string) (EntityReport, error) {
+	if secret == nil || secret.Data == nil {
+		return EntityReport{}, ErrAccessResponse
+	}
 	actualID, idOK := secret.Data["id"].(string)
 	name, nameOK := secret.Data["name"].(string)
 	disabled, disabledOK := secret.Data["disabled"].(bool)
-	if !idOK || !validateIdentityID(actualID) || !strings.EqualFold(actualID, id) || !nameOK || !validateAccessName(name) || !disabledOK {
+	if !idOK || !validateIdentityID(actualID) || expectedID != "" && !strings.EqualFold(actualID, expectedID) ||
+		!nameOK || !validateAccessName(name) || expectedName != "" && name != expectedName || !disabledOK {
 		return EntityReport{}, ErrAccessResponse
 	}
 	policies, err := accessStringList(secret.Data["policies"])

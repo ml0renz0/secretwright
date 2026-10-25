@@ -45,6 +45,7 @@ Usage:
   secretwright approle ACTION      Manage AppRoles and private credentials
   secretwright token ACTION        Create/revoke tokens or query self capabilities
   secretwright identity entity|group ACTION  Manage entities and internal groups
+  secretwright blueprint schema|validate|plan|apply  Manage declarative resources
 
 Network options (after the command, before a path):
   --address URL           Override VAULT_ADDR and VAULT_AGENT_ADDR
@@ -95,7 +96,9 @@ mutations support --dry-run and bounded --concurrency (default 4, maximum 16).
 Backup files contain plaintext secret values; their mode is 0600 and existing
 files are never replaced. Bulk reports contain metadata and require inspection
 after partial failure; there is no automatic rollback.
-Declarative operations are planned.
+Blueprint schema/validate run offline. Plan/apply inspect declared resources;
+apply creates only missing resources and rejects existing differences. Plans
+contain metadata, without specs or variable values; no deletion or migration.
 `
 
 const statusUsage = `Usage: secretwright status [--address URL] [--namespace NAME] [--timeout DURATION]
@@ -154,6 +157,8 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		return kvAdvancedCommand(ctx, args[0], args[1:], stdout, stderr)
 	case "policy", "approle", "token", "identity":
 		return accessCommand(ctx, args, stdout, stderr)
+	case "blueprint":
+		return blueprintCommand(ctx, args, stdout, stderr)
 	case "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback":
 		return kvWriteCommand(ctx, args[0], args[1:], stdin, stdout, stderr)
 	case "auth":

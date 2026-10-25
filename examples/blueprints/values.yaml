@@ -1,0 +1,3 @@
+prefix: payments-dev
+auth_mount: approle
+secret_uses: 3

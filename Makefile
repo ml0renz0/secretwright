@@ -7,13 +7,13 @@ build:
 	CGO_ENABLED=0 $(GO) build -trimpath -o bin/secretwright ./cmd/secretwright
 
 fmt:
-	$(GOFMT) -w $$(find cmd internal -type f -name '*.go')
+	$(GOFMT) -w $$(find cmd internal schemas -type f -name '*.go')
 
 fmt-check:
-	@unformatted="$$($(GOFMT) -l $$(find cmd internal -type f -name '*.go'))" || exit $$?; \
+	@unformatted="$$($(GOFMT) -l $$(find cmd internal schemas -type f -name '*.go'))" || exit $$?; \
 	test -z "$$unformatted" || { \
 		printf '%s\n' "$$unformatted"; \
-		$(GOFMT) -d $$(find cmd internal -type f -name '*.go'); \
+		$(GOFMT) -d $$(find cmd internal schemas -type f -name '*.go'); \
 		echo 'Run make fmt to format Go sources.' >&2; exit 1; \
 	}
 

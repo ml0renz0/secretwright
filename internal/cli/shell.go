@@ -199,6 +199,13 @@ func (options shellOptions) execute(ctx context.Context, words []string, cwd str
 
 func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	position := 1
+	if words[0] == "blueprint" {
+		action, depth := blueprintCommandPrefix(words)
+		if depth == 0 || action != "plan" && action != "apply" {
+			return append([]string(nil), words...)
+		}
+		position = depth
+	}
 	if words[0] == "policy" || words[0] == "approle" || words[0] == "token" || words[0] == "identity" {
 		_, _, position = accessCommandPrefix(words)
 		if position == 0 {
@@ -216,7 +223,7 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	case "mounts", "ls", "cat", "cd", "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback",
 		"tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
 		kv = true
-	case "status", "auth", "policy", "approle", "token", "identity":
+	case "status", "auth", "policy", "approle", "token", "identity", "blueprint":
 	default:
 		return append([]string(nil), words...)
 	}
@@ -243,6 +250,8 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 func shellOverrides(words []string) bool {
 	start := 1
 	if _, _, depth := accessCommandPrefix(words); depth != 0 {
+		start = depth
+	} else if _, depth := blueprintCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if words[0] == "auth" && len(words) > 1 && words[1] == "check" {
 		start = 2
