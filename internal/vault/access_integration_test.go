@@ -295,3 +295,120 @@ func TestIntegrationAccessTokenIssuanceAndInternalGroupPermissions(t *testing.T)
 	requireAccessRead(t, ctx, fixture, child.Token, "denied/item", false)
 	requireAccessRead(t, ctx, fixture, issued.Token, "allowed/item", true)
 }
+
+func cleanupAccessIntegrationToken(t *testing.T, fixture accessIntegrationFixture, token string) {
+	t.Helper()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = fixture.client.RevokeToken(ctx, fixture.issuer, token)
+	})
+}
+
+func TestIntegrationAccessSecretIDUseLimitDoesNotRevokeItsIssuedToken(t *testing.T) {
+	fixture := prepareAccessIntegrationFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	opts := vault.AppRoleOptions{Mount: fixture.mount}
+	_, err := fixture.client.WriteAppRole(ctx, fixture.issuer, fixture.role, vault.RoleSpec{
+		TokenPolicies: []string{fixture.policy}, TokenTTL: "1m", TokenMaxTTL: "2m",
+		SecretIDTTL: "1m", SecretIDNumUses: 1,
+	}, opts)
+	if err != nil {
+		t.Fatal("could not configure the disposable single-use SecretID")
+	}
+	credentials, err := fixture.client.IssueAppRoleCredentials(ctx, fixture.issuer, fixture.role, opts)
+	if err != nil {
+		t.Fatal("could not issue the disposable single-use SecretID")
+	}
+	issued, err := fixture.client.LoginAppRole(ctx, credentials, opts)
+	if err != nil || issued.Token == "" {
+		t.Fatal("single-use SecretID did not permit its first login")
+	}
+	cleanupAccessIntegrationToken(t, fixture, issued.Token)
+	second, err := fixture.client.LoginAppRole(ctx, credentials, opts)
+	if err == nil || second.Token != "" {
+		t.Fatal("exhausted SecretID permitted another login")
+	}
+	requireAccessReportSafe(t, err.Error(), fixture.issuer, credentials.RoleID, credentials.SecretID, credentials.SecretIDAccessor, issued.Token)
+	requireAccessReportSafe(t, second, fixture.issuer, credentials.RoleID, credentials.SecretID, credentials.SecretIDAccessor, issued.Token)
+	// Consuming the final login use is independent of the issued token's lifetime.
+	requireAccessRead(t, ctx, fixture, issued.Token, "allowed/item", true)
+}
+
+func TestIntegrationAccessTokenUseLimitIsNotConsumedByClientBookkeeping(t *testing.T) {
+	fixture := prepareAccessIntegrationFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	issued, err := fixture.client.CreateToken(ctx, fixture.issuer, vault.TokenSpec{
+		Policies: []string{fixture.policy}, TTL: "1m", ExplicitMaxTTL: "2m", NumUses: 1,
+	})
+	if err != nil || issued.Token == "" {
+		t.Fatal("could not create the disposable single-use token")
+	}
+	cleanupAccessIntegrationToken(t, fixture, issued.Token)
+	// An implicit lookup-self or mount discovery would spend this sole use before
+	// the caller's explicit read. The mount and version are supplied by the helper.
+	requireAccessRead(t, ctx, fixture, issued.Token, "allowed/item", true)
+	requireAccessRead(t, ctx, fixture, issued.Token, "allowed/item", false)
+	requireAccessReportSafe(t, issued, fixture.issuer, issued.Token, issued.Accessor)
+}
+
+func TestIntegrationAccessRevokingParentRevokesDescendantsButNotSiblingTokens(t *testing.T) {
+	fixture := prepareAccessIntegrationFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	spec := vault.TokenSpec{Policies: []string{fixture.policy}, TTL: "1m", ExplicitMaxTTL: "2m"}
+	parent, err := fixture.client.CreateToken(ctx, fixture.issuer, spec)
+	if err != nil || parent.Token == "" {
+		t.Fatal("could not create the disposable parent token")
+	}
+	cleanupAccessIntegrationToken(t, fixture, parent.Token)
+	child, err := fixture.client.CreateToken(ctx, parent.Token, spec)
+	if err != nil || child.Token == "" {
+		t.Fatal("could not create the disposable child token")
+	}
+	cleanupAccessIntegrationToken(t, fixture, child.Token)
+	sibling, err := fixture.client.CreateToken(ctx, fixture.issuer, spec)
+	if err != nil || sibling.Token == "" {
+		t.Fatal("could not create the independent disposable token")
+	}
+	cleanupAccessIntegrationToken(t, fixture, sibling.Token)
+	for _, token := range []string{parent.Token, child.Token, sibling.Token} {
+		requireAccessRead(t, ctx, fixture, token, "allowed/item", true)
+	}
+	if _, err := fixture.client.RevokeToken(ctx, fixture.issuer, parent.Token); err != nil {
+		t.Fatal("could not revoke the disposable parent token")
+	}
+	requireAccessRead(t, ctx, fixture, parent.Token, "allowed/item", false)
+	requireAccessRead(t, ctx, fixture, child.Token, "allowed/item", false)
+	requireAccessRead(t, ctx, fixture, sibling.Token, "allowed/item", true)
+}
+
+func TestIntegrationAccessPolicyChangesAffectAlreadyIssuedTokens(t *testing.T) {
+	fixture := prepareAccessIntegrationFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	issued, err := fixture.client.CreateToken(ctx, fixture.issuer, vault.TokenSpec{
+		Policies: []string{fixture.policy}, TTL: "1m", ExplicitMaxTTL: "2m",
+	})
+	if err != nil || issued.Token == "" {
+		t.Fatal("could not create the disposable policy-bound token")
+	}
+	cleanupAccessIntegrationToken(t, fixture, issued.Token)
+	requireAccessRead(t, ctx, fixture, issued.Token, "allowed/item", true)
+	requireAccessRead(t, ctx, fixture, issued.Token, "denied/item", false)
+	updated := fmt.Sprintf(`path %q { capabilities = ["read"] }`, fixture.kv.v2+"data/denied/item")
+	if _, err := fixture.client.WritePolicy(ctx, fixture.issuer, fixture.policy, updated); err != nil {
+		t.Fatal("could not replace the disposable token's ACL policy")
+	}
+	// ACL bodies are evaluated for each request, rather than captured when the
+	// token is minted. Removing a grant must take effect without another login.
+	requireAccessRead(t, ctx, fixture, issued.Token, "allowed/item", false)
+	requireAccessRead(t, ctx, fixture, issued.Token, "denied/item", true)
+	if _, err := fixture.client.DeletePolicy(ctx, fixture.issuer, fixture.policy); err != nil {
+		t.Fatal("could not remove the disposable token's ACL policy")
+	}
+	requireAccessRead(t, ctx, fixture, issued.Token, "allowed/item", false)
+	requireAccessRead(t, ctx, fixture, issued.Token, "denied/item", false)
+}
