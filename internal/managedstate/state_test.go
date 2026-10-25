@@ -90,7 +90,10 @@ func TestStateDecodeAcceptsOnlyBoundedStrictVersionedMetadata(t *testing.T) {
 		[]byte(strings.Replace(string(valid), `"kind":"policy"`, `"kind":"policy","kind":"entity"`, 1)),
 		[]byte(strings.Replace(string(valid), `"revision":1`, `"revision":1,"private-unknown":"private-value"`, 1)),
 		[]byte(strings.Replace(string(valid), `"namespace":"team"`, `"namespace":"team","token":"private-token"`, 1)),
+		[]byte(strings.Replace(string(valid), `"namespace":"team"`, `"namespace":null`, 1)),
+		[]byte(strings.Replace(string(valid), `"namespace":"team"`, `"Namespace":"team"`, 1)),
 		[]byte(strings.Replace(string(valid), `"kind":"policy"`, `"kind":"policy","spec":{"policy":"private-policy-body"}`, 1)),
+		[]byte(strings.Replace(string(valid), `"kind":"policy"`, `"kind":"policy","pending":null`, 1)),
 		[]byte(strings.Replace(string(valid), `"revision":1`, `"revision":"1"`, 1)),
 		[]byte(strings.Replace(string(valid), `"revision":1`, `"revision":1.0`, 1)),
 		[]byte(strings.Replace(string(valid), `"revision":1`, `"revision":1e0`, 1)),
@@ -323,6 +326,11 @@ func TestStateSaveNeverOverwritesAnExternalEditOrReplacement(t *testing.T) {
 			external.Revision++
 			external.Resources[0].Fingerprint = strings.Repeat("c", 64)
 			body := stateJSON(t, external)
+			if change == "inode" {
+				// Equal bytes must not let a new inode inherit the old writer's
+				// authority. This is distinct from detecting an edited payload.
+				body = readFixtureBytes(t, path)
+			}
 			switch change {
 			case "content":
 				if os.WriteFile(path, body, 0o600) != nil {

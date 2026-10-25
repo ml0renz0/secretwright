@@ -284,4 +284,3 @@ func TestManagedBackendNeverUpdatesOrConvertsStorageMounts(t *testing.T) {
 }
 
 var _ blueprint.ManagedBackend = (*blueprint.ManagedVaultBackend)(nil)
-

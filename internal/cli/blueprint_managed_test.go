@@ -305,6 +305,11 @@ func TestManagedBlueprintRecoveryRequiresExplicitAdoptionOfUncertainCreation(t *
 	if code != 1 || diagnostic.Len() == 0 || fixture.writes.Load() != 0 || strings.Contains(diagnostic.String(), "private-") {
 		t.Error("managed read-only plan hid a failed output or exposed internal values")
 	}
+	diagnostic.Reset()
+	code = cli.RunWithInput(context.Background(), managedCLIArguments("plan", blueprintFile, stateFile), f03PanicReader{}, blueprintShortWriter{}, &diagnostic, "test")
+	if code != 1 || diagnostic.Len() == 0 || fixture.writes.Load() != 0 || strings.Contains(diagnostic.String(), "private-") {
+		t.Error("managed plan announced success after a truncated JSON output")
+	}
 }
 
 func TestShellManagedBlueprintCommandsUseStartupScopeWithoutCWDOrHistory(t *testing.T) {

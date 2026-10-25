@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F07 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, gestión de accesos e identidades y motor de blueprints YAML según su [contrato](docs/features/F07-blueprint-engine.md). **F08 está implementada en la [PR #10](https://github.com/ml0renz0/secretwright/pull/10), pendiente de revisión y merge**, y añade [templates de arquitectura](docs/features/F08-architecture-templates.md). La reconciliación y la rotación pertenecen a fases posteriores.
+**F00–F08 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, motor de blueprints y templates de arquitectura. **F09 está en desarrollo** según su [contrato de reconciliación y drift](docs/features/F09-reconciliation-drift.md). La rotación pertenece a una fase posterior.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -121,7 +121,7 @@ El motor v1 administra montajes KV, políticas, AppRoles, entidades y grupos int
 
 `schema` y `validate` funcionan sin conexión. El esquema versionado se valida localmente y no carga URLs externas. Los planes y resultados contienen metadatos, sin HCL, specs, valores de variables ni credenciales.
 
-`apply` crea lo ausente y conserva lo equivalente. Si un recurso existente difiere, devuelve conflicto sin iniciar escrituras; no actualiza, adopta, elimina ni migra recursos. Después de aplicar, otro plan devuelve `changes: []`. Las operaciones no son atómicas: una aplicación parcial o incierta devuelve `5`, sin rollback ni reintentos automáticos. El [contrato de F07](docs/features/F07-blueprint-engine.md) detalla el formato y las garantías; la reconciliación queda para F09.
+Sin `--state`, `apply` conserva las reglas F07: crea lo ausente y conserva lo equivalente. Si un recurso existente difiere, devuelve conflicto sin iniciar escrituras; no actualiza, adopta, elimina ni migra recursos. Después de aplicar, otro plan devuelve `changes: []`. Las operaciones no son atómicas: una aplicación parcial o incierta devuelve `5`, sin rollback ni reintentos automáticos. El [contrato de F07](docs/features/F07-blueprint-engine.md) detalla el formato y las garantías.
 
 ## Templates de arquitectura
 
@@ -136,6 +136,25 @@ El motor v1 administra montajes KV, políticas, AppRoles, entidades y grupos int
 El catálogo cubre `single-user`, `multi-user`, `single-app`, `multi-app`, `multi-env` y `saas`. Render funciona offline y produce un blueprint F07 completo para revisar y aplicar después. Cada scope recibe una política propia; las aplicaciones reciben AppRoles y los usuarios entidades y grupos. Los usuarios necesitan un enlace de autenticación externo explícito: render no vincula identidades ni emite credenciales.
 
 Un manifiesto puede componer patrones y compartir un montaje KV v2, manteniendo scopes separados por instancia. El [ejemplo compuesto](examples/architectures/composed-shared-mount.yaml) muestra usuarios y aplicaciones con montaje común. Se rechazan montajes solapados, colisiones y expansiones que superen los 128 recursos. Los ejemplos y el [contrato de F08](docs/features/F08-architecture-templates.md) detallan dimensiones, permisos y límites.
+
+## Reconciliación y drift
+
+```bash
+./bin/secretwright blueprint adopt --file examples/reconciliation/base.yaml \
+  --state deployment.state.json --token-file operator-token
+./bin/secretwright blueprint apply --file examples/reconciliation/base.yaml \
+  --state deployment.state.json --token-file operator-token
+./bin/secretwright blueprint plan --file examples/reconciliation/changed.yaml \
+  --state deployment.state.json --token-file operator-token
+./bin/secretwright blueprint apply --file examples/reconciliation/changed.yaml \
+  --state deployment.state.json --token-file operator-token
+```
+
+F09 activa la gestión de recursos propios al seleccionar `--state`. `adopt` reclama explícitamente los existentes equivalentes y omite los ausentes, sin escribir en Vault. Apply registra creaciones confirmadas y permite actualizar políticas, AppRoles, entidades y grupos propios. Un recurso externo no se adopta por aparecer como noop. Los recursos retirados del descriptor se retienen; los montajes KV nunca se convierten ni eliminan.
+
+El drift externo se bloquea por defecto. `plan/apply --state ... --repair` autoriza su reconciliación o el reconocimiento de un baseline ya equivalente. Los pending de escrituras inciertas bloquean la operación normal: `blueprint recover --file ... --state ...` consulta y recupera checkpoints locales sin escribir en Vault; una creación incierta existente necesita además `--adopt-pending` para reclamarla.
+
+El inventario privado `0600` contiene metadatos y hashes, sin HCL, specs ni credenciales, y queda ligado a cluster, namespace y dirección configurada. Es una declaración local confiada, sin exclusividad remota. Un lock cooperativo y checkpoints atómicos protegen el archivo; las APIs administrativas de Vault siguen sin CAS. Los [ejemplos de reconciliación](examples/reconciliation/README.md) y el [contrato F09](docs/features/F09-reconciliation-drift.md) detallan las garantías, recuperación y límites.
 
 ## Comprobar autenticación
 
@@ -298,7 +317,7 @@ El laboratorio utiliza Docker o un ejecutable `vault` ya instalado y elimina los
 
 `make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md), [F02](docs/features/F02-kv-read-navigation.md), [F03](docs/features/F03-kv-write-versioning.md) y [F04](docs/features/F04-interactive-shell.md) detallan los escenarios.
 
-La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias con detector de carreras, compilación, fuzzing de blueprints, arquitecturas y rutas, y pruebas de integración contra Vault efímero. Incluye el ejecutable con pseudoterminal para navegación, Tab, Ctrl+R e interrupciones, con capturas privadas. La [guía de pruebas](docs/testing.md) detalla escenarios, comandos de reproducción y límites de cobertura.
+La CI ejecuta comprobaciones de formato, análisis estático, pruebas unitarias con detector de carreras, compilación, fuzzing de blueprints, arquitecturas, inventarios y rutas, y pruebas de integración contra Vault efímero. Incluye el ejecutable con pseudoterminal para navegación, Tab, Ctrl+R e interrupciones, con capturas privadas. La [guía de pruebas](docs/testing.md) detalla escenarios, comandos de reproducción y límites de cobertura.
 
 ## Cómo avanzará el proyecto
 
@@ -314,6 +333,7 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F06](docs/features/F06-access-identity-management.md)
 - [Contrato de F07](docs/features/F07-blueprint-engine.md)
 - [Contrato de F08](docs/features/F08-architecture-templates.md)
+- [Contrato de F09](docs/features/F09-reconciliation-drift.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 

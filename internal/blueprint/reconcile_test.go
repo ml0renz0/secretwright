@@ -502,3 +502,46 @@ func TestManagedCancellationAfterAConfirmedWriteRetainsItsCheckpoint(t *testing.
 		t.Fatal("cancellation lost a confirmed checkpoint or allowed another write")
 	}
 }
+
+func TestManagedGroupCannotTrustAnUnownedIdentityOrReuseARetainedLocator(t *testing.T) {
+	document := f07LoadDocument(t,
+		map[string]any{"id": "owner", "kind": "entity", "name": "app-owner", "spec": map[string]any{}},
+		map[string]any{"id": "team", "kind": "group", "name": "app-team", "spec": map[string]any{"member_entities": []string{"owner"}}},
+	)
+	backend := f09NewBackend()
+	backend.states["owner"] = f09Observed("owner", "entity", "owner", true)
+	backend.states["team"] = f09Observed("team", "group", "team", true)
+	state := f09State(t, document, backend)
+	for _, record := range state.Resources {
+		if record.ID == "team" {
+			state.Resources = []managedstate.Record{record}
+			break
+		}
+	}
+	sink := &f09Sink{t: t, state: state}
+	if _, err := blueprint.ApplyManaged(context.Background(), document, backend, sink, f09Target(), true); !errors.Is(err, blueprint.ErrConflict) || backend.writes != 0 || len(sink.saved) != 0 {
+		t.Error("owned group trusted an equivalent external identity without managed identity proof")
+	}
+	oldDocument := f07LoadDocument(t, f07PolicyResource("old"))
+	backend = f09NewBackend()
+	backend.states["old"] = f09Observed("old", "policy", "baseline", true)
+	state = f09State(t, oldDocument, backend)
+	replacement := f07PolicyResource("new")
+	replacement["name"] = "app-old"
+	document = f07LoadDocument(t, replacement)
+	backend.states["new"] = backend.states["old"]
+	sink = &f09Sink{t: t, state: state}
+	if _, err := blueprint.ApplyManaged(context.Background(), document, backend, sink, f09Target(), true); !errors.Is(err, blueprint.ErrConflict) || backend.writes != 0 || len(sink.saved) != 0 {
+		t.Error("a new logical ID silently reused a locator retained by an older owned resource")
+	}
+}
+
+func TestManagedRepairNeverConvertsAnOwnedKVMount(t *testing.T) {
+	document := f07LoadDocument(t, map[string]any{"id": "storage", "kind": "kv_mount", "name": "application", "spec": map[string]any{"version": 1}})
+	backend := f09NewBackend()
+	backend.states["storage"] = f09Observed("storage", "kv_mount", "existing-version-two", false)
+	sink := &f09Sink{t: t, state: f09State(t, document, backend)}
+	if _, err := blueprint.ApplyManaged(context.Background(), document, backend, sink, f09Target(), true); !errors.Is(err, blueprint.ErrConflict) || backend.writes != 0 || len(sink.saved) != 0 {
+		t.Fatal("managed repair converted or rewrote an existing KV engine")
+	}
+}

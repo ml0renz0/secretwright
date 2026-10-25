@@ -74,6 +74,8 @@ Las entidades y grupos se actualizan por el UUID registrado, con nombre y tipo c
 
 Un grupo propio puede añadir una referencia lógica a una entidad o grupo todavía ausente si su creación figura antes en el DAG. Los UUID se resuelven después de crearlos; la configuración actual del grupo sigue participando en el preflight.
 
+Las referencias lógicas de grupos propios o nuevos deben apuntar a identidades propias verificadas o a creaciones planificadas. Una identidad existente equivalente pero externa produce `unmanaged_reference`: su nombre no basta para conservar una autorización si alguien la reemplaza. Un grupo externo que permanece como noop sigue siendo externo. Los UUID declarados directamente en el descriptor constituyen una selección explícita y continúan admitidos.
+
 La identidad se comprueba mediante UUID para entidades/grupos, accessor para montajes KV y un hash de RoleID más accessor del montaje de autenticación para AppRoles. El RoleID no se guarda en claro. La API de políticas no ofrece un identificador de generación estable: borrar y recrear una política idéntica no es detectable por su fingerprint.
 
 ## Inventario, destino y archivos
