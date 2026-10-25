@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F06 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore y gestión de accesos e identidades. **F07 está en desarrollo** y añade el motor de blueprints YAML según su [contrato](docs/features/F07-blueprint-engine.md). Los templates de arquitectura, la reconciliación y la rotación pertenecen a fases posteriores.
+**F00–F06 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore y gestión de accesos e identidades. **F07 está implementada en la [PR #8](https://github.com/ml0renz0/secretwright/pull/8), pendiente de revisión y merge**, y añade el motor de blueprints YAML según su [contrato](docs/features/F07-blueprint-engine.md). Los templates de arquitectura, la reconciliación y la rotación pertenecen a fases posteriores.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
