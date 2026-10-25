@@ -153,12 +153,34 @@ func TestAllArchitecturePatternsRenderBoundedBlueprintResourcesOffline(t *testin
 			if document.Name != "platform" || len(document.Resources) != test.resources {
 				t.Fatal("architecture generated the wrong number of resources")
 			}
+			byName := make(map[string]blueprint.Resource)
+			mountID := ""
+			for _, resource := range document.Resources {
+				byName[resource.Name] = resource
+				if resource.Kind == "kv_mount" {
+					mountID = resource.ID
+					if resource.Name != "project/kv" || fmt.Sprint(resource.Spec["version"]) != "2" {
+						t.Error("architecture changed the declared mount or selected a non-v2 engine")
+					}
+				}
+			}
 			counts := make(map[string]int)
 			for _, resource := range document.Resources {
 				counts[resource.Kind]++
+				if resource.Kind == "policy" && !slices.Contains(resource.DependsOn, mountID) {
+					t.Error("policy omitted its declared KV mount dependency")
+				}
 				if resource.Kind == "approle" {
 					if resource.Spec["auth_mount"] != "approle" || resource.Spec["token_ttl"] != "15m" || resource.Spec["token_max_ttl"] != "1h" || resource.Spec["secret_id_ttl"] != "1h" || fmt.Sprint(resource.Spec["secret_id_num_uses"]) != "1" || fmt.Sprint(resource.Spec["token_num_uses"]) != "0" {
 						t.Error("generated application role lost its explicit bounded defaults")
+					}
+					policies, ok := resource.Spec["token_policies"].([]any)
+					if !ok || len(policies) != 1 {
+						t.Fatal("generated role does not select exactly its own explicit policy")
+					}
+					policy := byName[fmt.Sprint(policies[0])]
+					if policy.Kind != "policy" || !slices.Contains(resource.DependsOn, policy.ID) {
+						t.Error("generated role omitted its own policy or its dependency edge")
 					}
 				}
 			}
