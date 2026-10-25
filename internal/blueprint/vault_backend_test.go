@@ -150,10 +150,10 @@ func TestVaultBlueprintCreationVerifiesItsResultAndNeverRetries(t *testing.T) {
 
 func TestVaultBlueprintAppRolePreflightRequiresTheExistingBackendAndFixedInvariants(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		missing    bool
-		periodic   bool
-		batch      bool
+		name     string
+		missing  bool
+		periodic bool
+		batch    bool
 	}{
 		{name: "equivalent"}, {name: "missing auth mount", missing: true}, {name: "periodic", periodic: true}, {name: "batch", batch: true},
 	} {

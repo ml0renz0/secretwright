@@ -4,15 +4,15 @@ package blueprint
 import "errors"
 
 const (
-	APIVersion        = "secretwright/v1"
-	MaxInputBytes     = 1 << 20
-	MaxExpandedBytes  = 4 << 20
-	MaxResources      = 128
-	MaxVariables      = 64
-	MaxNodes          = 10000
-	MaxDepth          = 64
-	MaxStringBytes    = 128 << 10
-	MaxVariableBytes  = 4096
+	APIVersion       = "secretwright/v1"
+	MaxInputBytes    = 1 << 20
+	MaxExpandedBytes = 4 << 20
+	MaxResources     = 128
+	MaxVariables     = 64
+	MaxNodes         = 10000
+	MaxDepth         = 64
+	MaxStringBytes   = 128 << 10
+	MaxVariableBytes = 4096
 )
 
 var ErrInvalidBlueprint = errors.New("invalid or oversized Secretwright blueprint or variables")

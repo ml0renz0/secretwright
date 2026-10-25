@@ -19,12 +19,12 @@ const (
 )
 
 type f07Backend struct {
-	states       map[string]blueprint.Observation
-	inspections  map[string]int
-	events       []string
-	writes       int
-	inspect      func(context.Context, blueprint.Resource, map[string]string, int) (blueprint.Observation, error)
-	create       func(context.Context, blueprint.Resource, map[string]string) (blueprint.Observation, error)
+	states      map[string]blueprint.Observation
+	inspections map[string]int
+	events      []string
+	writes      int
+	inspect     func(context.Context, blueprint.Resource, map[string]string, int) (blueprint.Observation, error)
+	create      func(context.Context, blueprint.Resource, map[string]string) (blueprint.Observation, error)
 }
 
 func f07NewBackend() *f07Backend {
