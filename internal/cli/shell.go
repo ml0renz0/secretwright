@@ -206,7 +206,7 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	position := 1
 	if words[0] == "blueprint" {
 		action, depth := blueprintCommandPrefix(words)
-		if depth == 0 || action != "plan" && action != "apply" {
+		if depth == 0 || !blueprintOnline(action) {
 			return append([]string(nil), words...)
 		}
 		position = depth
@@ -272,7 +272,7 @@ func shellOverrides(words []string) bool {
 		switch name {
 		case "address", "namespace", "timeout", "token-file", "cwd":
 			return true
-		case "force", "dry-run", "h", "help":
+		case "force", "dry-run", "repair", "adopt-pending", "h", "help":
 			continue
 		}
 		if !equals {

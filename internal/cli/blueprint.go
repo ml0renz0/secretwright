@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ml0renz0/secretwright/internal/blueprint"
+	"github.com/ml0renz0/secretwright/internal/managedstate"
 	"github.com/ml0renz0/secretwright/internal/vault"
 )
 
@@ -19,8 +20,17 @@ const blueprintUsage = `Usage: secretwright blueprint ACTION [options]
   validate --file BP.yaml [--vars FILE] Validate a blueprint offline
   plan --file BP.yaml [--vars FILE]     Inspect Vault and print resource metadata
   apply --file BP.yaml [--vars FILE]    Create missing resources in dependency order
+  adopt --file BP.yaml --state NEW     Explicitly record equivalent resources
+  recover --file BP.yaml --state FILE  Inspect and recover pending checkpoints
 
-Plan and apply accept --address URL, --namespace NAME, --timeout DURATION and
+Plan/apply accept --state FILE for managed reconciliation. External drift is
+blocked unless --repair is selected. Recover --adopt-pending explicitly claims
+an equivalent resource after an uncertain creation. State files are private
+metadata, bound to the selected cluster, namespace and address. Omitted resources
+are retained, never deleted. Administrative updates have no atomic CAS.
+
+Plan, apply, adopt and recover accept --address URL, --namespace NAME,
+--timeout DURATION and
 --token-file FILE. The timeout covers the complete operation. These commands
 have no KV working directory. Schema and validate do not select credentials,
 inspect network configuration or contact Vault.
@@ -30,8 +40,9 @@ configuration, supplied explicitly; no environment or secret lookup occurs.
 Plans contain metadata, not policy bodies, specifications or variable values.
 
 Existing equivalent resources are unchanged. A differing or incompatible
-resource causes exit 4 before any write. Apply builds a fresh plan; it never
-updates, deletes, migrates engines or issues credentials. Administrative APIs
+resource causes exit 4 before any write. Without --state, apply builds a fresh
+create-only plan. Managed apply may update explicitly owned configuration;
+neither mode deletes, migrates engines or issues credentials. Administrative APIs
 have no atomic CAS, and a concurrent change can still occur between inspection
 and creation. Exit 5 means earlier or unconfirmed changes require inspection;
 there is no automatic rollback or retry.
@@ -43,6 +54,9 @@ type blueprintCommandOptions struct {
 	action    string
 	file      string
 	variables string
+	state     string
+	repair    bool
+	adoptPending bool
 	network   networkOptions
 }
 
@@ -53,7 +67,7 @@ func blueprintCommandPrefix(words []string) (string, int) {
 		return "", 0
 	}
 	switch words[1] {
-	case "schema", "validate", "plan", "apply":
+	case "schema", "validate", "plan", "apply", "adopt", "recover":
 		return words[1], 2
 	default:
 		return "", 0
@@ -75,11 +89,18 @@ func parseBlueprintCommandOptions(words []string) (blueprintCommandOptions, bool
 	}
 	var address, namespace string
 	var timeout time.Duration
-	if options.action == "plan" || options.action == "apply" {
+	if blueprintOnline(options.action) {
+		flags.StringVar(&options.state, "state", "", "private managed inventory file")
 		flags.StringVar(&address, "address", "", "Vault URL")
 		flags.StringVar(&namespace, "namespace", "", "Vault namespace")
 		flags.DurationVar(&timeout, "timeout", 0, "complete operation timeout")
 		flags.StringVar(&options.network.tokenFile, "token-file", "", "operator token file")
+	}
+	if options.action == "plan" || options.action == "apply" {
+		flags.BoolVar(&options.repair, "repair", false, "repair managed external drift")
+	}
+	if options.action == "recover" {
+		flags.BoolVar(&options.adoptPending, "adopt-pending", false, "claim an equivalent uncertain creation")
 	}
 	if err := flags.Parse(words[depth:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -101,8 +122,15 @@ func parseBlueprintCommandOptions(words []string) (blueprintCommandOptions, bool
 			invalid = invalid || options.network.tokenFile == ""
 		case "vars":
 			invalid = invalid || options.variables == "" || options.variables == "-"
+		case "state":
+			invalid = invalid || options.state == "" || options.state == "-"
+		case "repair":
+			invalid = invalid || options.state == ""
 		}
 	})
+	if (options.action == "adopt" || options.action == "recover") && options.state == "" {
+		invalid = true
+	}
 	if options.action != "schema" && (options.file == "" || options.file == "-") {
 		invalid = true
 	}
@@ -160,6 +188,9 @@ func blueprintCommand(ctx context.Context, words []string, stdout, stderr io.Wri
 	if options.action == "validate" {
 		return writeJSON(stdout, stderr, blueprint.ValidationReport{Name: document.Name, Resources: len(document.Resources), Order: document.Order})
 	}
+	if options.state != "" {
+		return managedBlueprintCommand(ctx, options, document, stdout, stderr)
+	}
 	token, err := vault.LoadToken(options.network.tokenFile)
 	if err != nil {
 		return blueprintError(stderr, err)
@@ -198,9 +229,9 @@ func blueprintCommand(ctx context.Context, words []string, stdout, stderr io.Wri
 func blueprintError(stderr io.Writer, err error) int {
 	fmt.Fprintln(stderr, "secretwright:", err)
 	switch {
-	case errors.Is(err, blueprint.ErrPartial), errors.Is(err, blueprint.ErrUnconfirmed), errors.Is(err, vault.ErrAccessUnconfirmed):
+	case errors.Is(err, blueprint.ErrPartial), errors.Is(err, blueprint.ErrUnconfirmed), errors.Is(err, vault.ErrAccessUnconfirmed), errors.Is(err, managedstate.ErrStateUnconfirmed):
 		return 5
-	case errors.Is(err, blueprint.ErrConflict), errors.Is(err, vault.ErrConflict):
+	case errors.Is(err, blueprint.ErrConflict), errors.Is(err, blueprint.ErrStateConflict), errors.Is(err, vault.ErrConflict), errors.Is(err, managedstate.ErrStateLocked), errors.Is(err, managedstate.ErrStateChanged):
 		return 4
 	case errors.Is(err, context.Canceled):
 		return 130
