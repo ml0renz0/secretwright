@@ -1,0 +1,11 @@
+api_version: secretwright/keytab/v1
+name: web
+principal:
+  realm: EXAMPLE.TEST
+  components:
+    - HTTP
+    - app.example.test
+minimum_kvno: 3
+allowed_enctypes: [17, 18, 19, 20]
+required_enctypes: [18]
+allow_other_principals: false

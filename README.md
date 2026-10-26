@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F10 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, blueprints, templates, reconciliación, rotación AppRole y gestión de TTL y leases. **F11 está implementada en la [PR #13](https://github.com/ml0renz0/secretwright/pull/13), pendiente de merge**, según su [contrato X.509 y PKI](docs/features/F11-x509-pki.md): inspección criptográfica local y certificados mediante roles PKI existentes en Vault.
+**F00–F11 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases y certificados X.509/PKI. **F12 está en preparación**, según su [contrato Kerberos y keytabs](docs/features/F12-kerberos-keytab.md): inspección nativa, política explícita y custodia de keytabs en Vault KV v2.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -192,6 +192,22 @@ Los comandos offline inspeccionan certificados, claves y CSR y verifican cadena,
 
 Los comandos online leen CA/certificados, emiten una identidad PEM privada, firman una CSR sin enviar su clave y revocan un certificado exacto tras comparar su huella. Requieren un montaje y rol PKI existentes. Las peticiones generadas usan YAML por defecto, con JSON opcional; certificados y claves mantienen PEM. Los [ejemplos](examples/pki/README.md) y el [contrato F11](docs/features/F11-x509-pki.md) explican archivos privados y resultados parciales.
 
+## Kerberos y keytabs
+
+```bash
+./bin/secretwright keytab inspect --file service.keytab
+./bin/secretwright keytab example > policy.yaml
+./bin/secretwright keytab validate --file service.keytab --policy policy.yaml
+./bin/secretwright keytab import --file service.keytab --policy policy.yaml \
+  --mount secret --path /secret/kerberos/web --token-file operator-token
+./bin/secretwright keytab export --mount secret --path /secret/kerberos/web \
+  --out recovered.keytab --token-file operator-token
+```
+
+El lector Go admite keytabs MIT v2 sin `klist`, muestra principales, KVNO y cifrados sin revelar claves y valida identidades y tipos requeridos mediante una política YAML o JSON. La validación es estructural y de política: no autentica con un KDC ni interpreta el timestamp como caducidad.
+
+Import y export conservan el binario completo mediante un envelope base64 en KV v2. Import usa CAS `0` por defecto y exige una revisión explícita para actualizar; export permite una versión histórica exacta y publica solo archivos nuevos `0600`. Los [ejemplos](examples/keytab/README.md) y el [contrato F12](docs/features/F12-kerberos-keytab.md) explican límites, privacidad y códigos de salida.
+
 ## Comprobar autenticación
 
 ```bash
@@ -372,6 +388,7 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F09](docs/features/F09-reconciliation-drift.md)
 - [Contrato de F10](docs/features/F10-lifecycle-rotation.md)
 - [Contrato de F11](docs/features/F11-x509-pki.md)
+- [Contrato de F12](docs/features/F12-kerberos-keytab.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 
