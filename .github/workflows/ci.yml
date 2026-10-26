@@ -49,6 +49,9 @@ jobs:
           - target: architecture-templates
             package: ./internal/architecture
             function: FuzzRender
+          - target: managed-state
+            package: ./internal/managedstate
+            function: FuzzDecode
           - target: logical-paths
             package: ./internal/vault
             function: FuzzResolvePath

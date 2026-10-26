@@ -20,6 +20,8 @@ type Observation struct {
 	Equal       bool   `json:"-"`
 	ID          string `json:"-"`
 	Fingerprint string `json:"-"`
+	Identity    string `json:"-"`
+	Guard       string `json:"-"`
 	Conflict    string `json:"-"`
 }
 

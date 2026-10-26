@@ -10,12 +10,13 @@ Estas pruebas incluyen servidores HTTP y backends controlados para provocar erro
 
 ## Fuzzing
 
-Tres jobs generan entradas adversariales durante 20 segundos cada uno, con el detector de carreras y dos workers. La minimización de cada entrada se limita a 100 ms para reservar el presupuesto de CI a explorar más casos. Las semillas del corpus se ejecutan también como regresiones en `make test`.
+Cuatro jobs generan entradas adversariales durante 20 segundos cada uno, con el detector de carreras y dos workers. La minimización de cada entrada se limita a 100 ms para reservar el presupuesto de CI a explorar más casos. Las semillas del corpus se ejecutan también como regresiones en `make test`.
 
 | Objetivo | Propiedades comprobadas |
 | --- | --- |
 | `FuzzLoad` | Lectura de blueprint y overrides sin pánicos; resultados deterministas, errores seguros y documentos válidos que conservan sus dependencias al revalidarse. |
 | `FuzzRender` | Arquitecturas que producen un blueprint F07 válido y determinista, o un error fijo sin una salida parcial. |
+| `FuzzDecode` | Inventarios JSON estrictos, decodificación determinista, errores fijos y serialización de estados válidos que conserva su contenido. |
 | `FuzzResolvePath` | Navegación canónica bajo la raíz lógica, rechazo de caracteres ambiguos, estabilidad al reutilizar una ruta y ausencia de diagnósticos con la entrada rechazada. |
 
 Se pueden ampliar localmente:
@@ -23,6 +24,7 @@ Se pueden ampliar localmente:
 ```bash
 go test -race -run='^$' -fuzz='^FuzzLoad$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/blueprint
 go test -race -run='^$' -fuzz='^FuzzRender$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/architecture
+go test -race -run='^$' -fuzz='^FuzzDecode$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/managedstate
 go test -race -run='^$' -fuzz='^FuzzResolvePath$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/vault
 ```
 
@@ -41,8 +43,11 @@ Si el fuzzer encuentra un fallo, Go guarda la entrada en `testdata/fuzz`; Action
 | Accesos | Políticas y permisos efectivos, límites de uso de SecretID y tokens, revocación de descendientes, cambios de ACL en tokens ya emitidos, grupos y publicación de credenciales en archivos privados. |
 | Blueprints | Validación offline, variables tipadas, DAG, conflictos y denegaciones antes de escribir, seis creaciones reales, UUIDs dependientes, plan posterior vacío y segunda aplicación con cero escrituras. |
 | Templates de arquitectura | Seis patrones, composición con montaje compartido, render offline, IDs estables, expansión acotada, aislamiento entre usuarios/apps/entornos/tenants y aplicación idempotente con F07. Los aliases de usuarios son exclusivos de la fixture. |
+| Reconciliación | Adopción explícita, inventario privado, binding de destino, cambios propios, drift bloqueado y reparación autorizada, recursos retenidos, identidad estable, referencias a nuevas identidades, checkpoints pendientes y recuperación sin escrituras Vault. |
 
 Los proxies de las pruebas reales inyectan cambios o cortan respuestas en puntos deterministas; las operaciones siguen llegando a Vault. Así se puede comprobar tanto el informe del cliente como el estado real que quedó en el servidor.
+
+F09 añade comprobaciones del inventario local: JSON estricto, límites, archivos `0600`, exclusividad del lock, snapshots separados, detección de reemplazos y revisión incremental de checkpoints. La aceptación de backend verifica conservación de RoleID, SecretIDs, alias metadata, CIDRs, metadata y aliases no administrados, además de ausencia de HCL o credenciales en inventario e informes. Las APIs sin CAS conservan una carrera entre lectura y escritura; estos tests no acreditan exclusividad remota ni detección de una política borrada y recreada idéntica.
 
 El laboratorio genera sus propios tokens, ignora las variables Vault del operador y elimina la fixture al terminar. Para ejecutar contra un laboratorio ya preparado, `make integration` requiere `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`.
 

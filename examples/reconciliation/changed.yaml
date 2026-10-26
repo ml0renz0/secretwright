@@ -1,0 +1,23 @@
+api_version: secretwright/v1
+name: reconciliation-demo
+resources:
+  - id: storage
+    kind: kv_mount
+    name: reconciliation-demo
+    spec:
+      version: 2
+  - id: application_policy
+    kind: policy
+    name: reconciliation-demo-app
+    depends_on: [storage]
+    spec:
+      policy: |
+        path "reconciliation-demo/data/app/*" {
+          capabilities = ["create", "read", "update", "delete"]
+        }
+        path "reconciliation-demo/metadata/app" {
+          capabilities = ["list"]
+        }
+        path "reconciliation-demo/metadata/app/*" {
+          capabilities = ["read", "list"]
+        }
