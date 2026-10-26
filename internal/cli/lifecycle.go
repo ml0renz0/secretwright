@@ -52,18 +52,18 @@ var errLifecycleInput = errors.New("could not read the lifecycle input file")
 var errLifecycleTarget = errors.New("the lifecycle target is not eligible for this operation")
 
 type lifecycleCommandOptions struct {
-	kind       string
-	action     string
-	file       string
-	receipt    string
-	format     fileformat.Format
-	dryRun     bool
-	ack        bool
-	abandon    bool
-	force      bool
-	increment  int64
-	below      int64
-	network    networkOptions
+	kind      string
+	action    string
+	file      string
+	receipt   string
+	format    fileformat.Format
+	dryRun    bool
+	ack       bool
+	abandon   bool
+	force     bool
+	increment int64
+	below     int64
+	network   networkOptions
 }
 
 // Share both command depths with session connection injection and its guards.
@@ -281,8 +281,8 @@ func lifecycleCommand(ctx context.Context, words []string, stdout, stderr io.Wri
 	}
 	if options.action == "validate" {
 		return writeLifecycleJSON(stdout, stderr, struct {
-			Name string `json:"name"`
-			Valid bool `json:"valid"`
+			Name  string `json:"name"`
+			Valid bool   `json:"valid"`
 		}{Name: spec.Name, Valid: true})
 	}
 	return lifecycleRotationCommand(ctx, options, spec, stdout, stderr)
@@ -341,11 +341,11 @@ func lifecycleRotationCommand(ctx context.Context, options lifecycleCommandOptio
 }
 
 type lifecycleTargetReport struct {
-	Operation string `json:"operation"`
-	Status string `json:"status"`
-	Exists bool `json:"exists"`
-	TTLSeconds int64 `json:"ttl_seconds"`
-	Renewable bool `json:"renewable"`
+	Operation  string `json:"operation"`
+	Status     string `json:"status"`
+	Exists     bool   `json:"exists"`
+	TTLSeconds int64  `json:"ttl_seconds"`
+	Renewable  bool   `json:"renewable"`
 }
 
 func lifecycleTargetCommand(ctx context.Context, options lifecycleCommandOptions, stdout, stderr io.Writer) int {

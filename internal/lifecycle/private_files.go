@@ -31,7 +31,9 @@ func privateDigest(body []byte) string {
 
 func privateValue(body []byte, token bool) (PrivateFile, error) {
 	limit := privateDocumentLimit
-	if token { limit = privateTokenLimit }
+	if token {
+		limit = privateTokenLimit
+	}
 	if len(body) == 0 || len(body) > limit || !utf8.Valid(body) || strings.IndexByte(string(body), 0) >= 0 {
 		return PrivateFile{}, ErrInvalidLifecycle
 	}
@@ -49,16 +51,28 @@ func privateValue(body []byte, token bool) (PrivateFile, error) {
 // path still identify the same private regular file after the bounded read.
 func readPrivateBytes(path string, limit int64) ([]byte, os.FileInfo, error) {
 	before, err := os.Lstat(path)
-	if err != nil { return nil, nil, ErrIO }
-	if !privateRegular(before) { return nil, nil, ErrInvalidLifecycle }
+	if err != nil {
+		return nil, nil, ErrIO
+	}
+	if !privateRegular(before) {
+		return nil, nil, ErrInvalidLifecycle
+	}
 	file, err := os.Open(path)
-	if err != nil { return nil, nil, ErrIO }
+	if err != nil {
+		return nil, nil, ErrIO
+	}
 	defer file.Close()
 	opened, err := file.Stat()
-	if err != nil || !privateRegular(opened) || !os.SameFile(before, opened) { return nil, nil, ErrConflict }
+	if err != nil || !privateRegular(opened) || !os.SameFile(before, opened) {
+		return nil, nil, ErrConflict
+	}
 	body, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil { return nil, nil, ErrIO }
-	if int64(len(body)) > limit { return nil, nil, ErrInvalidLifecycle }
+	if err != nil {
+		return nil, nil, ErrIO
+	}
+	if int64(len(body)) > limit {
+		return nil, nil, ErrInvalidLifecycle
+	}
 	after, statErr := file.Stat()
 	current, pathErr := os.Lstat(path)
 	if statErr != nil || pathErr != nil || !privateRegular(after) || !privateRegular(current) || !os.SameFile(opened, after) || !os.SameFile(opened, current) || opened.Size() != after.Size() || !opened.ModTime().Equal(after.ModTime()) {
@@ -69,9 +83,13 @@ func readPrivateBytes(path string, limit int64) ([]byte, os.FileInfo, error) {
 
 func readPrivateToken(path string) (PrivateFile, os.FileInfo, error) {
 	body, identity, err := readPrivateBytes(path, privateTokenLimit)
-	if err != nil { return PrivateFile{}, nil, err }
+	if err != nil {
+		return PrivateFile{}, nil, err
+	}
 	value, err := privateValue(body, true)
-	if err != nil { return PrivateFile{}, nil, err }
+	if err != nil {
+		return PrivateFile{}, nil, err
+	}
 	return value, identity, nil
 }
 
@@ -84,14 +102,20 @@ func ReadPrivate(path string) (PrivateFile, error) {
 
 func removePrivateOwned(path string, identity os.FileInfo) {
 	current, err := os.Lstat(path)
-	if err == nil && identity != nil && current.Mode().IsRegular() && os.SameFile(identity, current) { _ = os.Remove(path) }
+	if err == nil && identity != nil && current.Mode().IsRegular() && os.SameFile(identity, current) {
+		_ = os.Remove(path)
+	}
 }
 
 func syncPrivateDirectory(path string) error {
 	directory, err := os.Open(path)
-	if err != nil { return ErrIO }
+	if err != nil {
+		return ErrIO
+	}
 	defer directory.Close()
-	if directory.Sync() != nil { return ErrIO }
+	if directory.Sync() != nil {
+		return ErrIO
+	}
 	return nil
 }
 
@@ -99,55 +123,93 @@ func syncPrivateDirectory(path string) error {
 // destination. The temporary name and contents never enter an error message.
 func preparePrivateFile(path string, body []byte, owner os.FileInfo) (string, os.FileInfo, error) {
 	file, err := os.CreateTemp(filepath.Dir(path), ".secretwright-private-*")
-	if err != nil { return "", nil, ErrIO }
+	if err != nil {
+		return "", nil, ErrIO
+	}
 	name := file.Name()
 	identity, err := file.Stat()
-	if err != nil { _ = file.Close(); _ = os.Remove(name); return "", nil, ErrIO }
+	if err != nil {
+		_ = file.Close()
+		_ = os.Remove(name)
+		return "", nil, ErrIO
+	}
 	abort := func() (string, os.FileInfo, error) {
 		_ = file.Close()
 		removePrivateOwned(name, identity)
 		return "", nil, ErrIO
 	}
-	if file.Chmod(0o600) != nil { return abort() }
-	if owner != nil && preservePrivateOwner(file, owner) != nil { return abort() }
+	if file.Chmod(0o600) != nil {
+		return abort()
+	}
+	if owner != nil && preservePrivateOwner(file, owner) != nil {
+		return abort()
+	}
 	written, err := file.Write(body)
-	if err != nil || written != len(body) || file.Sync() != nil { return abort() }
+	if err != nil || written != len(body) || file.Sync() != nil {
+		return abort()
+	}
 	identity, err = file.Stat()
-	if err != nil || !privateRegular(identity) { return abort() }
-	if file.Close() != nil { removePrivateOwned(name, identity); return "", nil, ErrIO }
+	if err != nil || !privateRegular(identity) {
+		return abort()
+	}
+	if file.Close() != nil {
+		removePrivateOwned(name, identity)
+		return "", nil, ErrIO
+	}
 	return name, identity, nil
 }
 
 func createPrivateArtifact(path string, body []byte) error {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		if errors.Is(err, os.ErrExist) { return ErrConflict }
+		if errors.Is(err, os.ErrExist) {
+			return ErrConflict
+		}
 		return ErrIO
 	}
 	identity, err := file.Stat()
-	if err != nil { _ = file.Close(); return ErrUnconfirmed }
+	if err != nil {
+		_ = file.Close()
+		return ErrUnconfirmed
+	}
 	abort := func() error { _ = file.Close(); removePrivateOwned(path, identity); return ErrIO }
-	if file.Chmod(0o600) != nil { return abort() }
+	if file.Chmod(0o600) != nil {
+		return abort()
+	}
 	written, err := file.Write(body)
-	if err != nil || written != len(body) || file.Sync() != nil { return abort() }
-	if file.Close() != nil { return ErrUnconfirmed }
+	if err != nil || written != len(body) || file.Sync() != nil {
+		return abort()
+	}
+	if file.Close() != nil {
+		return ErrUnconfirmed
+	}
 	current, err := os.Lstat(path)
-	if err != nil || !privateRegular(current) || !os.SameFile(identity, current) || syncPrivateDirectory(filepath.Dir(path)) != nil { return ErrUnconfirmed }
+	if err != nil || !privateRegular(current) || !os.SameFile(identity, current) || syncPrivateDirectory(filepath.Dir(path)) != nil {
+		return ErrUnconfirmed
+	}
 	return nil
 }
 
 func artifactName(kind string) (string, bool) {
 	switch kind {
-	case "old": return "old.token", true
-	case "new": return "new.token", true
-	case "bundle": return "bundle.json", true
-	default: return "", false
+	case "old":
+		return "old.token", true
+	case "new":
+		return "new.token", true
+	case "bundle":
+		return "bundle.json", true
+	default:
+		return "", false
 	}
 }
 
 func artifactValue(kind string, body []byte) (PrivateFile, error) {
 	value, err := privateValue(body, kind != "bundle")
-	if err != nil { return PrivateFile{}, err }
-	if kind == "bundle" && !json.Valid(body) { return PrivateFile{}, ErrInvalidLifecycle }
+	if err != nil {
+		return PrivateFile{}, err
+	}
+	if kind == "bundle" && !json.Valid(body) {
+		return PrivateFile{}, ErrInvalidLifecycle
+	}
 	return value, nil
 }

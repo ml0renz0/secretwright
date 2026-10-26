@@ -15,12 +15,6 @@ var lifecycleV1 []byte
 // LifecycleV1 returns a detached copy of the lifecycle policy schema.
 func LifecycleV1() []byte { return append([]byte(nil), lifecycleV1...) }
 
-//go:embed lifecycle-v1.schema.json
-var lifecycleV1 []byte
-
-// LifecycleV1 returns a detached copy of the credential lifecycle schema.
-func LifecycleV1() []byte { return append([]byte(nil), lifecycleV1...) }
-
 // BlueprintV1 returns a detached copy so callers cannot change validation.
 func BlueprintV1() []byte {
 	return append([]byte(nil), blueprintV1...)

@@ -312,7 +312,7 @@ func TestLifecycleTokenNeverManagesTheOperatorRootOrIneligibleTokens(t *testing.
 	cleanEnvironment(t)
 	target := lifecycleCLIFile(t, "private-target-token\n")
 	for _, test := range []struct {
-		name string
+		name   string
 		action string
 		change func(map[string]any)
 	}{

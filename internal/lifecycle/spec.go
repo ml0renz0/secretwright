@@ -38,9 +38,13 @@ func Load(input io.Reader) (Spec, error) {
 }
 
 func lifecycleMount(value string) bool {
-	if value == "" || len(value) > 1024 { return false }
+	if value == "" || len(value) > 1024 {
+		return false
+	}
 	for _, segment := range strings.Split(value, "/") {
-		if !lifecycleName.MatchString(segment) { return false }
+		if !lifecycleName.MatchString(segment) {
+			return false
+		}
 	}
 	return true
 }
@@ -50,7 +54,7 @@ func lifecycleSeconds(value string) (int64, error) {
 	if err != nil || duration <= 0 || duration > 24*time.Hour || duration%time.Second != 0 {
 		return 0, ErrInvalidLifecycle
 	}
-	return int64(duration/time.Second), nil
+	return int64(duration / time.Second), nil
 }
 
 func ValidateSpec(spec Spec) (Spec, error) {
@@ -66,19 +70,27 @@ func ValidateSpec(spec Spec) (Spec, error) {
 		return Spec{}, ErrInvalidLifecycle
 	}
 	below, err := lifecycleSeconds(spec.Policy.RotateBelow)
-	if err != nil { return Spec{}, ErrInvalidLifecycle }
+	if err != nil {
+		return Spec{}, ErrInvalidLifecycle
+	}
 	minimum, err := lifecycleSeconds(spec.Policy.MinimumNewTTL)
-	if err != nil || minimum < below { return Spec{}, ErrInvalidLifecycle }
-	spec.Policy.RotateBelow = (time.Duration(below)*time.Second).String()
-	spec.Policy.MinimumNewTTL = (time.Duration(minimum)*time.Second).String()
+	if err != nil || minimum < below {
+		return Spec{}, ErrInvalidLifecycle
+	}
+	spec.Policy.RotateBelow = (time.Duration(below) * time.Second).String()
+	spec.Policy.MinimumNewTTL = (time.Duration(minimum) * time.Second).String()
 	return spec, nil
 }
 
 func SpecHash(spec Spec) string {
 	spec, err := ValidateSpec(spec)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	body, err := json.Marshal(spec)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	return digestBytes(body)
 }
 
