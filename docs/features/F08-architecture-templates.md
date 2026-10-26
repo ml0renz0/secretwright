@@ -12,16 +12,22 @@ F08 genera configuración offline. No consulta Vault, emite credenciales, crea e
 secretwright template list
 secretwright template show single-app
 secretwright template schema
-secretwright template render --file examples/architectures/multi-env.yaml > platform.blueprint.json
+secretwright template render --file examples/architectures/multi-env.yaml > platform.blueprint.yaml
 
-secretwright blueprint validate --file platform.blueprint.json
-secretwright blueprint plan --file platform.blueprint.json --token-file operator-token
-secretwright blueprint apply --file platform.blueprint.json --token-file operator-token
+secretwright blueprint validate --file platform.blueprint.yaml
+secretwright blueprint plan --file platform.blueprint.yaml --token-file operator-token
+secretwright blueprint apply --file platform.blueprint.yaml --token-file operator-token
+
+# Selección explícita de JSON
+secretwright template show --format json single-app
+secretwright template render --file examples/architectures/multi-env.yaml --format json > platform.blueprint.json
 ```
 
-`list` devuelve el catálogo ordenado por nombre, con una descripción de cada patrón. `show NAME` devuelve un manifiesto JSON completo y editable del patrón elegido. `schema` exporta el JSON Schema embebido. `render` escribe por stdout un blueprint JSON F07 completo, con recursos, dependencias y especificaciones.
+`list` devuelve el catálogo JSON ordenado por nombre, con una descripción de cada patrón. `show NAME` devuelve un manifiesto completo y editable del patrón elegido. `schema` exporta el JSON Schema embebido. `render` escribe por stdout un blueprint F07 completo, con recursos, dependencias y especificaciones.
 
-El único argumento posicional admitido es el nombre de `show`. Render requiere un archivo real con `--file`; no acepta `-`, stdin, `--vars`, parámetros de conexión ni cwd KV. Los cuatro comandos funcionan sin seleccionar un token, crear un cliente Vault ni leer la configuración de conexión heredada. Un error devuelve `1`, con diagnóstico fijo y sin un JSON de éxito parcial. Se detectan también los fallos al escribir la salida.
+`show` y `render` generan YAML por defecto y permiten elegir `--format yaml` o `--format json`. La entrada puede ser YAML o JSON con independencia del formato de salida. Los enteros, booleanos, valores nulos y strings conservan su tipo; las políticas HCL multilínea se escriben como bloques literales legibles en YAML. `list` y `schema` siguen produciendo JSON y no aceptan `--format`. Las APIs Go `architecture.Example` y `architecture.Render` conservan su salida JSON.
+
+El único argumento posicional admitido es el nombre de `show`; sus opciones deben ir antes del nombre, como en `show --format json single-app`. Render requiere un archivo real con `--file`; no acepta `-`, stdin, `--vars`, parámetros de conexión ni cwd KV. Los cuatro comandos funcionan sin seleccionar un token, crear un cliente Vault ni leer la configuración de conexión heredada. Un error devuelve `1`, con diagnóstico fijo y sin salida de éxito parcial. Se detectan también los fallos y las escrituras truncadas de la salida.
 
 Los comandos funcionan en la shell con las mismas reglas offline y sin cwd KV. Quedan fuera del historial; el completado ofrece únicamente el nombre raíz `template`, sin completar archivos, valores ni rutas remotas. La redirección del ejemplo pertenece a la shell del sistema operativo, no al lenguaje de la shell interactiva de Secretwright.
 
@@ -90,13 +96,13 @@ La emisión o el login se realizan después mediante F06, de forma explícita y 
 
 ## Composición y estabilidad
 
-Un manifiesto admite hasta 16 instancias, ordenadas por ID al renderizar. Las etiquetas de cada dimensión se ordenan antes de expandirlas. Reordenar instancias o listas conserva exactamente la misma salida JSON.
+Un manifiesto admite hasta 16 instancias, ordenadas por ID al renderizar. Las etiquetas de cada dimensión se ordenan antes de expandirlas. Reordenar instancias o listas conserva exactamente la misma salida para el formato elegido.
 
 Las instancias que declaran el mismo montaje KV v2 comparten un único recurso de montaje. Sus scopes siguen separados por el ID de instancia. Los montajes solapados, como `team` y `team/secrets`, se rechazan. Cualquier otra colisión de recursos generados se considera un error; no se sobrescriben recursos ni se adopta propiedad de ellos.
 
 Los IDs de montaje se derivan de un hash de su ruta. Los IDs de políticas, entidades, grupos y roles se derivan del scope completo. Añadir otro scope conserva los IDs de los existentes; no se basan en la posición de un elemento. Una colisión de hash detectada es un error, no una deduplicación silenciosa.
 
-Los recursos se serializan ordenados por ID en JSON con indentación y salto de línea final. Antes de devolver bytes se valida el blueprint generado con F07, incluidas sus dependencias, nombres, políticas y límites. No se emiten recursos parciales si una instancia falla.
+Los recursos se serializan ordenados por ID, con indentación de dos espacios y salto de línea final en YAML y JSON. Antes de devolver bytes se valida el blueprint generado con F07, incluidas sus dependencias, nombres, políticas y límites. No se emiten recursos parciales si una instancia falla.
 
 ## Límites
 
@@ -116,6 +122,7 @@ Se comprueba el tamaño de las expansiones antes de construir el producto cartes
 El contrato, los ejemplos y las pruebas se publican antes de la implementación. F08 conserva las comprobaciones y regresiones F00–F07 e incorpora:
 
 - Catálogo y ejemplos de los seis patrones, esquema real embebido y render offline utilizable por F07.
+- YAML por defecto, selección explícita de YAML o JSON, equivalencia de recursos y tipos entre ambos formatos y políticas HCL legibles.
 - Rechazo de campos desconocidos o inaplicables, duplicados, entradas ambiguas, colisiones, montajes solapados y expansiones fuera de límites.
 - Salida canónica determinista y IDs estables al reordenar o añadir scopes.
 - Composición con montaje compartido, sin ampliar los permisos entre instancias.

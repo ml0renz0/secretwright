@@ -36,8 +36,8 @@ func ioFixture(t *testing.T) (lifecycle.Spec, string) {
 		APIVersion: "secretwright/lifecycle/v1", Name: "payments-api",
 		Provider: lifecycle.ProviderSpec{Kind: "approle", AuthMount: "approle", Role: "payments-api"},
 		Consumer: lifecycle.ConsumerSpec{Kind: "token-file", Path: consumer},
-		Verify: lifecycle.VerifySpec{Kind: "kv-read", Mount: "secret", KVVersion: 2, Path: "/secret/payments/health"},
-		Policy: lifecycle.PolicySpec{RotateBelow: "5m", MinimumNewTTL: "10m"},
+		Verify:   lifecycle.VerifySpec{Kind: "kv-read", Mount: "secret", KVVersion: 2, Path: "/secret/payments/health"},
+		Policy:   lifecycle.PolicySpec{RotateBelow: "5m", MinimumNewTTL: "10m"},
 	}
 	spec, err := lifecycle.ValidateSpec(spec)
 	if err != nil {
@@ -50,9 +50,9 @@ func ioPrepared(spec lifecycle.Spec, format fileformat.Format) lifecycle.Receipt
 	return lifecycle.Receipt{
 		APIVersion: "secretwright/rotation/v1", Name: spec.Name,
 		ConfigSHA256: lifecycle.SpecHash(spec),
-		Target: managedstate.Target{AddressSHA256: strings.Repeat("a", 64), ClusterID: "11111111-1111-4111-8111-111111111111", Namespace: "team"},
-		Revision: 1, Generation: strings.Repeat("1", 32), Phase: "prepared",
-		RoleIdentity: strings.Repeat("b", 64), OldDigest: ioDigest([]byte(ioOldToken+"\n")),
+		Target:       managedstate.Target{AddressSHA256: strings.Repeat("a", 64), ClusterID: "11111111-1111-4111-8111-111111111111", Namespace: "team"},
+		Revision:     1, Generation: strings.Repeat("1", 32), Phase: "prepared",
+		RoleIdentity: strings.Repeat("b", 64), OldDigest: ioDigest([]byte(ioOldToken + "\n")),
 		EntityID: "22222222-2222-4222-8222-222222222222", Format: format,
 	}
 }
@@ -211,20 +211,33 @@ func TestRotationOpenValidatesLocalConsumerBeforeLeavingAnyArtifacts(t *testing.
 			spec, path := ioFixture(t)
 			switch fixture {
 			case "missing":
-				if os.Remove(spec.Consumer.Path) != nil { t.Fatal("fixture removal failed") }
+				if os.Remove(spec.Consumer.Path) != nil {
+					t.Fatal("fixture removal failed")
+				}
 			case "public":
-				if os.Chmod(spec.Consumer.Path, 0o644) != nil { t.Fatal("fixture permission failed") }
+				if os.Chmod(spec.Consumer.Path, 0o644) != nil {
+					t.Fatal("fixture permission failed")
+				}
 			case "symlink":
 				target := spec.Consumer.Path + ".target"
-				if os.Rename(spec.Consumer.Path, target) != nil || os.Symlink(target, spec.Consumer.Path) != nil { t.Fatal("fixture symlink failed") }
+				if os.Rename(spec.Consumer.Path, target) != nil || os.Symlink(target, spec.Consumer.Path) != nil {
+					t.Fatal("fixture symlink failed")
+				}
 			case "directory":
-				if os.Remove(spec.Consumer.Path) != nil || os.Mkdir(spec.Consumer.Path, 0o700) != nil { t.Fatal("fixture directory failed") }
+				if os.Remove(spec.Consumer.Path) != nil || os.Mkdir(spec.Consumer.Path, 0o700) != nil {
+					t.Fatal("fixture directory failed")
+				}
 			case "invalid-token":
-				if os.WriteFile(spec.Consumer.Path, []byte(ioOldToken+" "+ioNewToken), 0o600) != nil { t.Fatal("fixture token failed") }
+				if os.WriteFile(spec.Consumer.Path, []byte(ioOldToken+" "+ioNewToken), 0o600) != nil {
+					t.Fatal("fixture token failed")
+				}
 			}
 			store, err := lifecycle.Open(spec, path, "", true)
 			ioStaticError(t, err, path, spec.Consumer.Path)
-			if store != nil { _ = store.Close(); t.Error("rejected consumer returned a usable store") }
+			if store != nil {
+				_ = store.Close()
+				t.Error("rejected consumer returned a usable store")
+			}
 			ioNoArtifact(t, path)
 			ioNoArtifact(t, path+".lock")
 			ioNoArtifact(t, path+".d")
@@ -233,7 +246,10 @@ func TestRotationOpenValidatesLocalConsumerBeforeLeavingAnyArtifacts(t *testing.
 	spec, path := ioFixture(t)
 	store, err := lifecycle.Open(spec, path, fileformat.Format("private-format"), true)
 	ioStaticError(t, err, path)
-	if store != nil { _ = store.Close(); t.Error("invalid output format returned a usable store") }
+	if store != nil {
+		_ = store.Close()
+		t.Error("invalid output format returned a usable store")
+	}
 	ioNoArtifact(t, path)
 	ioNoArtifact(t, path+".lock")
 	ioNoArtifact(t, path+".d")
@@ -305,7 +321,10 @@ func TestRotationPrivateArtifactsUseFixedExclusiveNamesAndOpaqueBytes(t *testing
 	spec, path := ioFixture(t)
 	store := ioOpen(t, spec, path, "", true)
 	receipt := ioPrepare(t, store, spec, fileformat.YAML)
-	for _, item := range []struct{ kind, name string; body []byte }{
+	for _, item := range []struct {
+		kind, name string
+		body       []byte
+	}{
 		{"new", "new.token", []byte(ioNewToken + "\n")},
 		{"bundle", "bundle.json", []byte("{\"secret_id\":\"private-bundle-secret\"}\n")},
 	} {
@@ -368,17 +387,27 @@ func TestRotationPublishRefusesExternalConsumerChangesWithoutClobber(t *testing.
 			receipt := ioAdvance(t, store)
 			switch change {
 			case "content":
-				if os.WriteFile(spec.Consumer.Path, []byte("private-foreign-token\n"), 0o600) != nil { t.Fatal("fixture write failed") }
+				if os.WriteFile(spec.Consumer.Path, []byte("private-foreign-token\n"), 0o600) != nil {
+					t.Fatal("fixture write failed")
+				}
 			case "same-content-inode":
 				replacement := spec.Consumer.Path + ".replacement"
-				if os.WriteFile(replacement, []byte(ioOldToken+"\n"), 0o600) != nil || os.Rename(replacement, spec.Consumer.Path) != nil { t.Fatal("fixture replacement failed") }
+				if os.WriteFile(replacement, []byte(ioOldToken+"\n"), 0o600) != nil || os.Rename(replacement, spec.Consumer.Path) != nil {
+					t.Fatal("fixture replacement failed")
+				}
 			case "mode":
-				if os.Chmod(spec.Consumer.Path, 0o644) != nil { t.Fatal("fixture mode change failed") }
+				if os.Chmod(spec.Consumer.Path, 0o644) != nil {
+					t.Fatal("fixture mode change failed")
+				}
 			case "symlink":
 				target := spec.Consumer.Path + ".foreign"
-				if os.WriteFile(target, []byte("private-foreign-token\n"), 0o600) != nil || os.Remove(spec.Consumer.Path) != nil || os.Symlink(target, spec.Consumer.Path) != nil { t.Fatal("fixture symlink failed") }
+				if os.WriteFile(target, []byte("private-foreign-token\n"), 0o600) != nil || os.Remove(spec.Consumer.Path) != nil || os.Symlink(target, spec.Consumer.Path) != nil {
+					t.Fatal("fixture symlink failed")
+				}
 			case "candidate-content":
-				if os.WriteFile(filepath.Join(path+".d", receipt.Generation, "new.token"), []byte("private-foreign-token\n"), 0o600) != nil { t.Fatal("candidate fixture change failed") }
+				if os.WriteFile(filepath.Join(path+".d", receipt.Generation, "new.token"), []byte("private-foreign-token\n"), 0o600) != nil {
+					t.Fatal("candidate fixture change failed")
+				}
 			}
 			before := ioRead(t, spec.Consumer.Path)
 			info, _ := os.Lstat(spec.Consumer.Path)
@@ -407,22 +436,37 @@ func TestRotationSaveRefusesStaleReceiptLockOrBinding(t *testing.T) {
 			switch change {
 			case "receipt-comment":
 				body := append(ioRead(t, path), []byte("# external edit\n")...)
-				if os.WriteFile(path, body, 0o600) != nil { t.Fatal("fixture write failed") }
+				if os.WriteFile(path, body, 0o600) != nil {
+					t.Fatal("fixture write failed")
+				}
 			case "receipt-inode":
 				replacement := path + ".replacement"
-				if os.WriteFile(replacement, ioRead(t, path), 0o600) != nil || os.Rename(replacement, path) != nil { t.Fatal("fixture replacement failed") }
+				if os.WriteFile(replacement, ioRead(t, path), 0o600) != nil || os.Rename(replacement, path) != nil {
+					t.Fatal("fixture replacement failed")
+				}
 			case "receipt-mode":
-				if os.Chmod(path, 0o644) != nil { t.Fatal("fixture mode failed") }
+				if os.Chmod(path, 0o644) != nil {
+					t.Fatal("fixture mode failed")
+				}
 			case "receipt-symlink":
 				foreign := path + ".foreign"
-				if os.WriteFile(foreign, ioRead(t, path), 0o600) != nil || os.Remove(path) != nil || os.Symlink(foreign, path) != nil { t.Fatal("fixture link failed") }
+				if os.WriteFile(foreign, ioRead(t, path), 0o600) != nil || os.Remove(path) != nil || os.Symlink(foreign, path) != nil {
+					t.Fatal("fixture link failed")
+				}
 			case "lock-inode":
-				if os.Remove(path+".lock") != nil || os.WriteFile(path+".lock", []byte("foreign"), 0o600) != nil { t.Fatal("fixture lock failed") }
-			case "binding": next.Target.Namespace = "foreign"
-			case "revision": next.Revision++
-			case "generation": next.Generation = strings.Repeat("2", 32)
-			case "old-proof": next.OldDigest = strings.Repeat("c", 64)
-			case "format": next.Format = fileformat.JSON
+				if os.Remove(path+".lock") != nil || os.WriteFile(path+".lock", []byte("foreign"), 0o600) != nil {
+					t.Fatal("fixture lock failed")
+				}
+			case "binding":
+				next.Target.Namespace = "foreign"
+			case "revision":
+				next.Revision++
+			case "generation":
+				next.Generation = strings.Repeat("2", 32)
+			case "old-proof":
+				next.OldDigest = strings.Repeat("c", 64)
+			case "format":
+				next.Format = fileformat.JSON
 			}
 			before := ioRead(t, path)
 			err := store.Save(next)
@@ -480,22 +524,34 @@ func TestRotationPrepareRefusesSymlinkOrPublicArtifactDirectories(t *testing.T) 
 			root := path + ".d"
 			generation := filepath.Join(root, receipt.Generation)
 			foreign := filepath.Join(filepath.Dir(path), "foreign-artifacts")
-			if os.Mkdir(foreign, 0o700) != nil { t.Fatal("fixture directory failed") }
+			if os.Mkdir(foreign, 0o700) != nil {
+				t.Fatal("fixture directory failed")
+			}
 			switch fixture {
 			case "symlink-parent":
-				if os.Symlink(foreign, root) != nil { t.Fatal("fixture symlink failed") }
+				if os.Symlink(foreign, root) != nil {
+					t.Fatal("fixture symlink failed")
+				}
 			case "public-parent":
-				if os.Mkdir(root, 0o755) != nil { t.Fatal("fixture directory failed") }
+				if os.Mkdir(root, 0o755) != nil {
+					t.Fatal("fixture directory failed")
+				}
 			case "symlink-generation":
-				if os.Mkdir(root, 0o700) != nil || os.Symlink(foreign, generation) != nil { t.Fatal("fixture symlink failed") }
+				if os.Mkdir(root, 0o700) != nil || os.Symlink(foreign, generation) != nil {
+					t.Fatal("fixture symlink failed")
+				}
 			case "public-generation":
-				if os.Mkdir(root, 0o700) != nil || os.Mkdir(generation, 0o755) != nil { t.Fatal("fixture directory failed") }
+				if os.Mkdir(root, 0o700) != nil || os.Mkdir(generation, 0o755) != nil {
+					t.Fatal("fixture directory failed")
+				}
 			}
 			old, _ := store.Consumer()
 			ioStaticError(t, store.Prepare(receipt, old), path, foreign)
 			ioNoArtifact(t, path)
 			entries, _ := os.ReadDir(foreign)
-			if len(entries) != 0 { t.Error("private generation write followed an external directory") }
+			if len(entries) != 0 {
+				t.Error("private generation write followed an external directory")
+			}
 		})
 	}
 }

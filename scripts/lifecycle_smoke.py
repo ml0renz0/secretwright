@@ -57,7 +57,9 @@ def main():
             raise
 
     def run(name, args, expected=0, offline=False, raw=False):
-        depth = 3 if args[:2] in [['lifecycle', 'token'], ['lifecycle', 'lease']] else 2
+        depth = 1 if args[0] == 'shell' else 2
+        if args[:2] in [['lifecycle', 'token'], ['lifecycle', 'lease']]:
+            depth = 3
         injected = [] if offline else ['--address', address, '--namespace', '', '--timeout', '1m']
         if not offline and args[:2] != ['approle', 'login']:
             injected += ['--token-file', str(root_file)]
@@ -185,6 +187,20 @@ def main():
         run('lease-revoke-repeat', ['lifecycle', 'lease', 'revoke', '--file', str(lease_file), '--force'])
     else:
         require(os.environ.get('VAULT_TEST_REQUIRE_DATABASE') != '1', 'Required PostgreSQL CLI fixture was unavailable.')
+
+    STAGE = 'fixed-connection-shell-and-history'
+    session_file = fixture / 'f10-session.sw'
+    write_file(session_file, 'lifecycle token inspect --file ' + json.dumps(str(consumer)) + '\n'
+               + 'lifecycle inspect --file ' + json.dumps(str(policy_file)) + ' --receipt ' + json.dumps(str(receipt)) + '\n'
+               + 'history\n')
+    session = run('shell', ['shell', '--no-prompt', '--script', str(session_file)], raw=True)
+    decoder, reports = json.JSONDecoder(), []
+    while session.strip():
+        session = session.lstrip()
+        report, end = decoder.raw_decode(session)
+        reports.append(report)
+        session = session[end:]
+    require(len(reports) == 3 and reports[0].get('exists') is True and reports[1].get('phase') == 'retired' and reports[2] == [], 'Lifecycle shell lost its fixed connection or saved lifecycle commands in history.')
 
     STAGE = 'private-artifact-audit'
     # Private generation files intentionally contain credentials. Metadata,

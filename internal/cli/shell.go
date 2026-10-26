@@ -38,6 +38,8 @@ not send the operator token or replace it. Credential exports require --out FILE
 all access commands stay out of history and never print issued credentials.
 Template commands remain offline, ignore the session's KV cwd and credentials,
 and stay out of history. Rendered configuration is reviewed with blueprint.
+Lifecycle online actions use the fixed connection without a KV cwd; schema,
+example and validate remain offline. Every lifecycle action stays out of history.
 `
 
 type shellOptions struct {
@@ -204,6 +206,13 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 		return append([]string(nil), words...)
 	}
 	position := 1
+	if words[0] == "lifecycle" {
+		kind, action, depth := lifecycleCommandPrefix(words)
+		if depth == 0 || !lifecycleOnline(kind, action) {
+			return append([]string(nil), words...)
+		}
+		position = depth
+	}
 	if words[0] == "blueprint" {
 		action, depth := blueprintCommandPrefix(words)
 		if depth == 0 || !blueprintOnline(action) {
@@ -228,7 +237,7 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	case "mounts", "ls", "cat", "cd", "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback",
 		"tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
 		kv = true
-	case "status", "auth", "policy", "approle", "token", "identity", "blueprint":
+	case "status", "auth", "policy", "approle", "token", "identity", "blueprint", "lifecycle":
 	default:
 		return append([]string(nil), words...)
 	}
@@ -256,6 +265,8 @@ func shellOverrides(words []string) bool {
 	start := 1
 	if _, _, depth := accessCommandPrefix(words); depth != 0 {
 		start = depth
+	} else if _, _, depth := lifecycleCommandPrefix(words); depth != 0 {
+		start = depth
 	} else if _, depth := blueprintCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if _, depth := templateCommandPrefix(words); depth != 0 {
@@ -272,7 +283,7 @@ func shellOverrides(words []string) bool {
 		switch name {
 		case "address", "namespace", "timeout", "token-file", "cwd":
 			return true
-		case "force", "dry-run", "repair", "adopt-pending", "h", "help":
+		case "force", "dry-run", "repair", "adopt-pending", "ack-consumer", "abandon", "h", "help":
 			continue
 		}
 		if !equals {

@@ -8,6 +8,10 @@ cd "$(dirname "$0")/.."
 vault_image="${VAULT_TEST_IMAGE:-hashicorp/vault:2.2.0}"
 database_image="${VAULT_TEST_DATABASE_IMAGE:-postgres:17-alpine}"
 require_database="${VAULT_TEST_REQUIRE_DATABASE:-0}"
+case "$require_database" in
+  0|1) ;;
+  *) echo 'VAULT_TEST_REQUIRE_DATABASE must be 0 or 1.' >&2; exit 1 ;;
+esac
 fixture_dir="$(mktemp -d)"
 container_id=""
 database_container_id=""
@@ -36,6 +40,15 @@ trap 'exit 143' TERM
 command -v curl >/dev/null || { echo 'curl is required to check fixture readiness.' >&2; exit 1; }
 command -v python3 >/dev/null || { echo 'python3 is required to prepare the integration fixture.' >&2; exit 1; }
 
+docker_available=false
+if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+  docker_available=true
+fi
+if [[ "$require_database" == 1 && "$docker_available" != true ]]; then
+  echo 'Full integration coverage requires Docker for the disposable PostgreSQL fixture.' >&2
+  exit 1
+fi
+
 # Use a fresh, unauthenticated health endpoint; ignore operator credentials and
 # TLS settings so this fixture never contacts a configured production server.
 for variable in "${!VAULT_@}"; do
@@ -58,7 +71,7 @@ with os.fdopen(descriptor, 'w') as token_file:
 PY
 fixture_root_token="$(cat "$VAULT_TEST_ROOT_TOKEN_FILE")"
 
-if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+if [[ "$docker_available" == true ]]; then
   container_id="$(VAULT_DEV_ROOT_TOKEN_ID="$fixture_root_token" docker run --detach --rm \
     --env VAULT_DEV_ROOT_TOKEN_ID \
     --publish 127.0.0.1::8200 \
@@ -110,7 +123,7 @@ fi
 # is generated locally, passed through the Docker environment and Vault JSON
 # request body, and never printed or placed in process arguments.
 export VAULT_TEST_REQUIRE_DATABASE="$require_database"
-if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+if [[ "$docker_available" == true ]]; then
   export VAULT_TEST_DATABASE_PASSWORD_FILE="$fixture_dir/database-password"
   python3 - "$VAULT_TEST_DATABASE_PASSWORD_FILE" <<'PY_DATABASE'
 import os

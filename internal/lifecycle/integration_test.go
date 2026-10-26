@@ -21,16 +21,16 @@ import (
 )
 
 type lifecycleIntegrationFixture struct {
-	admin *api.Client
-	client *vault.Client
+	admin    *api.Client
+	client   *vault.Client
 	operator string
-	auth string
-	mount string
-	policy string
-	role string
+	auth     string
+	mount    string
+	policy   string
+	role     string
 	consumer string
-	old string
-	spec lifecycle.Spec
+	old      string
+	spec     lifecycle.Spec
 }
 
 func lifecycleIntegrationClients(t *testing.T) (*api.Client, *vault.Client, string) {
@@ -107,7 +107,7 @@ func prepareLifecycleIntegrationFixture(t *testing.T) lifecycleIntegrationFixtur
 	if _, err := client.WriteAppRole(ctx, operator, f.role, role, vault.AppRoleOptions{Mount: f.auth}); err != nil {
 		t.Fatal("could not extend the disposable role's future token TTL")
 	}
-	f.spec = lifecycle.Spec{APIVersion: "secretwright/lifecycle/v1", Name: "application", Provider: lifecycle.ProviderSpec{Kind: "approle", AuthMount: f.auth, Role: f.role}, Consumer: lifecycle.ConsumerSpec{Kind: "token-file", Path: f.consumer}, Verify: lifecycle.VerifySpec{Kind: "kv-read", Mount: f.mount, KVVersion: 2, Path: "/"+f.mount+"/health"}, Policy: lifecycle.PolicySpec{RotateBelow: "90s", MinimumNewTTL: "90s"}}
+	f.spec = lifecycle.Spec{APIVersion: "secretwright/lifecycle/v1", Name: "application", Provider: lifecycle.ProviderSpec{Kind: "approle", AuthMount: f.auth, Role: f.role}, Consumer: lifecycle.ConsumerSpec{Kind: "token-file", Path: f.consumer}, Verify: lifecycle.VerifySpec{Kind: "kv-read", Mount: f.mount, KVVersion: 2, Path: "/" + f.mount + "/health"}, Policy: lifecycle.PolicySpec{RotateBelow: "90s", MinimumNewTTL: "90s"}}
 	return f
 }
 
@@ -150,7 +150,7 @@ func TestIntegrationLifecyclePublishesVerifiedTokenAndRetiresOnlyAfterAck(t *tes
 	if err != nil || dry.Status != "would_rotate" || !dry.Due {
 		t.Fatal("the real short-lived consumer did not produce a due dry run")
 	}
-	for _, path := range []string{receipt, receipt+".lock", receipt+".d"} {
+	for _, path := range []string{receipt, receipt + ".lock", receipt + ".d"} {
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatal("read-only rotation created a receipt, lock or credential artifacts")
 		}
@@ -199,7 +199,7 @@ func TestIntegrationLifecyclePublishesVerifiedTokenAndRetiresOnlyAfterAck(t *tes
 
 func TestIntegrationLifecycleFailedNewProbeLeavesOldConsumerUsable(t *testing.T) {
 	f := prepareLifecycleIntegrationFixture(t)
-	f.spec.Verify.Path = "/"+f.mount+"/denied"
+	f.spec.Verify.Path = "/" + f.mount + "/denied"
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	before, err := os.ReadFile(f.consumer)
@@ -277,7 +277,7 @@ func TestIntegrationLifecyclePostgresLeaseRenewalAndExactRevocation(t *testing.T
 		defer stop()
 		_ = admin.Sys().UnmountWithContext(cleanup, mount)
 	})
-	connection := "postgresql://{{username}}:{{password}}@"+os.Getenv("VAULT_TEST_DATABASE_ADDRESS")+"/secretwright?sslmode=disable"
+	connection := "postgresql://{{username}}:{{password}}@" + os.Getenv("VAULT_TEST_DATABASE_ADDRESS") + "/secretwright?sslmode=disable"
 	if _, err := admin.Logical().WriteWithContext(ctx, mount+"/config/fixture", map[string]any{"plugin_name": "postgresql-database-plugin", "allowed_roles": []string{"application"}, "connection_url": connection, "username": "secretwright_fixture", "password": strings.TrimSpace(string(password))}); err != nil {
 		t.Fatal("could not configure the disposable PostgreSQL plugin connection")
 	}
@@ -312,5 +312,8 @@ func TestIntegrationLifecyclePostgresLeaseRenewalAndExactRevocation(t *testing.T
 	if err != nil || after.Exists {
 		t.Fatal("the synchronously revoked database lease still exists in Vault")
 	}
+	// A failed connection proves revocation only while the same server still
+	// accepts an independent valid credential.
+	lifecycleRequireDatabaseLogin(t, ctx, "secretwright_fixture", strings.TrimSpace(string(password)), true)
 	lifecycleRequireDatabaseLogin(t, ctx, username, credential, false)
 }

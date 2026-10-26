@@ -214,9 +214,9 @@ func TestLifecycleTokenRenewUsesPrivateTargetAndReportsActualTTL(t *testing.T) {
 	}))
 	defer server.Close()
 	for _, test := range []struct {
-		action string
-		flags []string
-		ttl int64
+		action    string
+		flags     []string
+		ttl       int64
 		mutations int32
 	}{
 		{"inspect", nil, 125, 0},
@@ -227,7 +227,9 @@ func TestLifecycleTokenRenewUsesPrivateTargetAndReportsActualTTL(t *testing.T) {
 		args := []string{"lifecycle", "token", test.action, "--address", server.URL, "--namespace", "team", "--token-file", operator, "--file", target}
 		args = append(args, test.flags...)
 		code, output, diagnostics := runWriteCLI(f03PanicReader{}, args...)
-		var report struct { TTL int64 `json:"ttl_seconds"` }
+		var report struct {
+			TTL int64 `json:"ttl_seconds"`
+		}
 		if code != 0 || diagnostics != "" || json.Unmarshal([]byte(output), &report) != nil || report.TTL != test.ttl || renewals.Load() != test.mutations || strings.Contains(output, "private-") {
 			t.Error("token lifecycle did not report actual TTL without exposing its private target")
 		}
@@ -303,6 +305,55 @@ func TestLifecycleLeaseCommandsUseExactPrivateIDAndFixedShellConnection(t *testi
 	}
 	if values[3].(map[string]any)["ttl_seconds"] != json.Number("90") || values[6].(map[string]any)["exists"] != false || !reflect.DeepEqual(values[7], []any{}) {
 		t.Error("lease lifecycle lost actual TTL, absence confirmation or shell history exclusion")
+	}
+}
+
+func TestLifecycleTokenNeverManagesTheOperatorRootOrIneligibleTokens(t *testing.T) {
+	cleanEnvironment(t)
+	target := lifecycleCLIFile(t, "private-target-token\n")
+	for _, test := range []struct {
+		name string
+		action string
+		change func(map[string]any)
+	}{
+		{"operator", "inspect", nil},
+		{"root", "inspect", func(data map[string]any) { data["policies"] = []string{"root"} }},
+		{"identity-root", "inspect", func(data map[string]any) { data["identity_policies"] = []string{"root"} }},
+		{"batch", "inspect", func(data map[string]any) { data["type"] = "batch" }},
+		{"unbounded", "inspect", func(data map[string]any) { data["ttl"] = 0 }},
+		{"limited-uses", "renew", func(data map[string]any) { data["num_uses"] = 1 }},
+		{"nonrenewable", "renew", func(data map[string]any) { data["renewable"] = false }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			operator := "private-selected-operator"
+			if test.name == "operator" {
+				operator = "private-target-token"
+			}
+			t.Setenv("VAULT_TOKEN", operator)
+			var requests, mutations atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.URL.Path != "/v1/auth/token/lookup" {
+					mutations.Add(1)
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				response := lifecycleTokenLookup(125)
+				if test.change != nil {
+					test.change(response["data"].(map[string]any))
+				}
+				accessReply(t, w, response)
+			}))
+			defer server.Close()
+			args := []string{"lifecycle", "token", test.action, "--address", server.URL, "--file", target}
+			if test.action == "renew" {
+				args = append(args, "--increment", "1m", "--dry-run")
+			}
+			code, output, diagnostics := runWriteCLI(f03PanicReader{}, args...)
+			if code != 1 || output != "" || diagnostics == "" || mutations.Load() != 0 || test.name == "operator" && requests.Load() != 0 || strings.Contains(diagnostics, "private-") {
+				t.Error("lifecycle managed an unsafe target or exposed its credential")
+			}
+		})
 	}
 }
 

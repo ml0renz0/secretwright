@@ -8,14 +8,20 @@ import (
 	"os"
 
 	"github.com/ml0renz0/secretwright/internal/architecture"
+	"github.com/ml0renz0/secretwright/internal/fileformat"
 )
 
 const templateUsage = `Usage: secretwright template ACTION [options]
 
   list                        List the six architecture patterns as JSON
-  show NAME                   Print an editable architecture manifest
+  show [--format yaml|json] NAME
+                              Print an editable architecture manifest
   schema                      Export the embedded architecture JSON Schema
-  render --file ARCHITECTURE   Render a complete F07 blueprint as JSON
+  render --file ARCHITECTURE [--format yaml|json]
+                              Render a complete F07 blueprint
+
+Show and render default to YAML. Use --format json to select JSON. Catalog and
+schema output remain JSON. Show options must precede NAME.
 
 Every template command runs offline. Files must be actual filenames, never '-'
 or stdin. Connection, token, namespace, working-directory and variable options
@@ -33,6 +39,7 @@ type templateCommandOptions struct {
 	action string
 	name   string
 	file   string
+	format fileformat.Format
 }
 
 // Every recognized template action is offline. Shell override detection shares
@@ -58,6 +65,10 @@ func parseTemplateCommandOptions(words []string) (templateCommandOptions, bool, 
 	}
 	flags := flag.NewFlagSet("secretwright template", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	var format string
+	if options.action == "show" || options.action == "render" {
+		flags.StringVar(&format, "format", "", "output format: yaml or json")
+	}
 	if options.action == "render" {
 		flags.StringVar(&options.file, "file", "", "architecture file")
 	}
@@ -77,6 +88,13 @@ func parseTemplateCommandOptions(words []string) (templateCommandOptions, bool, 
 	}
 	if options.action == "render" && (options.file == "" || options.file == "-") {
 		return options, false, errInvalidOptions
+	}
+	if options.action == "show" || options.action == "render" {
+		var err error
+		options.format, err = fileformat.Parse(format)
+		if err != nil {
+			return options, false, errInvalidOptions
+		}
 	}
 	return options, false, nil
 }
@@ -114,6 +132,12 @@ func templateCommand(words []string, stdout, stderr io.Writer) int {
 	}
 	if err != nil {
 		return commandError(stderr, architecture.ErrInvalidTemplate)
+	}
+	if options.action == "show" || options.action == "render" {
+		body, err = fileformat.EncodeJSON(body, options.format)
+		if err != nil {
+			return commandError(stderr, fileformat.ErrInvalidFormat)
+		}
 	}
 	written, err := stdout.Write(body)
 	if err != nil || written != len(body) {

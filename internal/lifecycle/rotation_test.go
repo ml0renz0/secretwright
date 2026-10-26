@@ -47,22 +47,22 @@ func rotationReceipt(spec lifecycle.Spec, phase string) lifecycle.Receipt {
 }
 
 type rotationSession struct {
-	t        *testing.T
-	receipt  lifecycle.Receipt
-	consumer lifecycle.PrivateFile
-	files    map[string]lifecycle.PrivateFile
-	events   *[]string
-	saves    int
-	prepared int
+	t         *testing.T
+	receipt   lifecycle.Receipt
+	consumer  lifecycle.PrivateFile
+	files     map[string]lifecycle.PrivateFile
+	events    *[]string
+	saves     int
+	prepared  int
 	published int
-	failSave func(lifecycle.Receipt) error
+	failSave  func(lifecycle.Receipt) error
 }
 
 func newRotationSession(t *testing.T, events *[]string) *rotationSession {
 	return &rotationSession{t: t, receipt: lifecycle.Receipt{Format: fileformat.YAML}, consumer: rotationPrivate("private-old-token\n"), files: make(map[string]lifecycle.PrivateFile), events: events}
 }
 
-func (store *rotationSession) Snapshot() lifecycle.Receipt { return store.receipt }
+func (store *rotationSession) Snapshot() lifecycle.Receipt              { return store.receipt }
 func (store *rotationSession) Consumer() (lifecycle.PrivateFile, error) { return store.consumer, nil }
 func (store *rotationSession) Prepare(receipt lifecycle.Receipt, old lifecycle.PrivateFile) error {
 	store.t.Helper()
@@ -119,12 +119,12 @@ func (store *rotationSession) Publish(expected string) error {
 }
 
 type rotationBackend struct {
-	events *[]string
-	role lifecycle.RoleInfo
-	target managedstate.Target
-	tokens map[string]vault.TokenLifecycleInfo
+	events                                  *[]string
+	role                                    lifecycle.RoleInfo
+	target                                  managedstate.Target
+	tokens                                  map[string]vault.TokenLifecycleInfo
 	issueErr, loginErr, probeErr, revokeErr error
-	issues, logins, probes, revokes int
+	issues, logins, probes, revokes         int
 }
 
 func newRotationBackend(events *[]string) *rotationBackend {
@@ -137,13 +137,19 @@ func newRotationBackend(events *[]string) *rotationBackend {
 		}}, Identity: rotationHash("role-identity"), RoleID: "private-role-id",
 	}, tokens: map[string]vault.TokenLifecycleInfo{"private-old-token": info, "private-new-token": newInfo}}
 }
-func (backend *rotationBackend) Target(context.Context) (managedstate.Target, error) { return backend.target, nil }
-func (backend *rotationBackend) Role(context.Context, lifecycle.Spec) (lifecycle.RoleInfo, error) { return backend.role, nil }
+func (backend *rotationBackend) Target(context.Context) (managedstate.Target, error) {
+	return backend.target, nil
+}
+func (backend *rotationBackend) Role(context.Context, lifecycle.Spec) (lifecycle.RoleInfo, error) {
+	return backend.role, nil
+}
 func (backend *rotationBackend) Token(_ context.Context, token string) (vault.TokenLifecycleInfo, error) {
 	*backend.events = append(*backend.events, "token:"+token)
 	return backend.tokens[token], nil
 }
-func (backend *rotationBackend) IsOperator(token string) bool { return token == "private-operator-token" }
+func (backend *rotationBackend) IsOperator(token string) bool {
+	return token == "private-operator-token"
+}
 func (backend *rotationBackend) Issue(context.Context, lifecycle.Spec) (vault.AppRoleCredentials, error) {
 	*backend.events = append(*backend.events, "issue")
 	backend.issues++
@@ -192,7 +198,9 @@ func privateRotationReport(t *testing.T, report lifecycle.Report, err error) {
 
 func eventIndex(events []string, wanted string) int {
 	for index, value := range events {
-		if value == wanted { return index }
+		if value == wanted {
+			return index
+		}
 	}
 	return -1
 }
@@ -229,7 +237,9 @@ func TestRotationPublishesVerifiedCredentialAndKeepsOldUntilExplicitAck(t *testi
 func TestLifecycleDryRunAndTTLThresholdMakeNoArtifactsOrMutations(t *testing.T) {
 	for _, due := range []bool{false, true} {
 		for _, dry := range []bool{false, true} {
-			if due && !dry { continue }
+			if due && !dry {
+				continue
+			}
 			events := []string{}
 			store, backend := newRotationSession(t, &events), newRotationBackend(&events)
 			if !due {
@@ -253,14 +263,22 @@ func TestLifecycleRejectsUnsafeOldCredentialsAndRoleBeforeIssuing(t *testing.T) 
 			store, backend := newRotationSession(t, &events), newRotationBackend(&events)
 			info := backend.tokens["private-old-token"]
 			switch change {
-			case "operator": store.consumer = rotationPrivate("private-operator-token\n")
-			case "root": info.Policies = []string{"root"}
-			case "uses": info.NumUses = 1
-			case "expired": info.Exists = false
-			case "foreign-role": info.RoleName = "another-role"
-			case "foreign-entity": info.EntityID = ""
-			case "unbounded-role": backend.role.State.Role.TokenTTLSeconds = 0
-			case "limited-role": backend.role.State.Role.TokenNumUses = 1
+			case "operator":
+				store.consumer = rotationPrivate("private-operator-token\n")
+			case "root":
+				info.Policies = []string{"root"}
+			case "uses":
+				info.NumUses = 1
+			case "expired":
+				info.Exists = false
+			case "foreign-role":
+				info.RoleName = "another-role"
+			case "foreign-entity":
+				info.EntityID = ""
+			case "unbounded-role":
+				backend.role.State.Role.TokenTTLSeconds = 0
+			case "limited-role":
+				backend.role.State.Role.TokenNumUses = 1
 			}
 			backend.tokens["private-old-token"] = info
 			report, err := lifecycle.Rotate(context.Background(), lifecycleSpec(t), store, backend, false)
@@ -279,10 +297,14 @@ func TestRotationVerificationFailureNeverReplacesOrRevokesOldCredential(t *testi
 			store, backend := newRotationSession(t, &events), newRotationBackend(&events)
 			newInfo := backend.tokens["private-new-token"]
 			switch failure {
-			case "probe": backend.probeErr = errors.New("private-probe-body")
-			case "entity": newInfo.EntityID = "33333333-3333-4333-8333-333333333333"
-			case "policies": newInfo.Policies = []string{"foreign"}
-			case "ttl": newInfo.TTLSeconds = 30
+			case "probe":
+				backend.probeErr = errors.New("private-probe-body")
+			case "entity":
+				newInfo.EntityID = "33333333-3333-4333-8333-333333333333"
+			case "policies":
+				newInfo.Policies = []string{"foreign"}
+			case "ttl":
+				newInfo.TTLSeconds = 30
 			}
 			backend.tokens["private-new-token"] = newInfo
 			report, err := lifecycle.Rotate(context.Background(), lifecycleSpec(t), store, backend, false)
@@ -299,7 +321,11 @@ func TestUncertainIssuanceAndLoginAreNeverAutomaticallyReplayed(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			events := []string{}
 			store, backend := newRotationSession(t, &events), newRotationBackend(&events)
-			if failure == "issue" { backend.issueErr = vault.ErrAccessUnconfirmed } else { backend.loginErr = vault.ErrAccessUnconfirmed }
+			if failure == "issue" {
+				backend.issueErr = vault.ErrAccessUnconfirmed
+			} else {
+				backend.loginErr = vault.ErrAccessUnconfirmed
+			}
 			report, err := lifecycle.Rotate(context.Background(), lifecycleSpec(t), store, backend, false)
 			if !errors.Is(err, lifecycle.ErrPartial) || store.consumer.Token != "private-old-token" || store.published != 0 || backend.revokes != 0 {
 				t.Fatal("unknown issuance or login did not preserve the working consumer")
@@ -319,12 +345,18 @@ func TestRotationBindingAndConsumerChangesStopRetirementBeforeRevocation(t *test
 			events := []string{}
 			store, backend := newRotationSession(t, &events), newRotationBackend(&events)
 			spec := lifecycleSpec(t)
-			if _, err := lifecycle.Rotate(context.Background(), spec, store, backend, false); err != nil { t.Fatal("could not prepare published generation") }
+			if _, err := lifecycle.Rotate(context.Background(), spec, store, backend, false); err != nil {
+				t.Fatal("could not prepare published generation")
+			}
 			switch change {
-			case "consumer": store.consumer = rotationPrivate("private-foreign-token\n")
-			case "role": backend.role.Identity = rotationHash("replaced-role")
-			case "target": backend.target.AddressSHA256 = rotationHash("another-address")
-			case "probe": backend.probeErr = vault.ErrPermissionDenied
+			case "consumer":
+				store.consumer = rotationPrivate("private-foreign-token\n")
+			case "role":
+				backend.role.Identity = rotationHash("replaced-role")
+			case "target":
+				backend.target.AddressSHA256 = rotationHash("another-address")
+			case "probe":
+				backend.probeErr = vault.ErrPermissionDenied
 			}
 			report, err := lifecycle.Retire(context.Background(), spec, store, backend, true)
 			if err == nil || backend.revokes != 0 || !backend.tokens["private-old-token"].Exists || !backend.tokens["private-new-token"].Exists {
@@ -339,7 +371,9 @@ func TestRotationCheckpointFailureStopsBeforePublishingAndRecoveryNeverReplays(t
 	events := []string{}
 	store, backend := newRotationSession(t, &events), newRotationBackend(&events)
 	store.failSave = func(receipt lifecycle.Receipt) error {
-		if receipt.Phase == "published" { return lifecycle.ErrUnconfirmed }
+		if receipt.Phase == "published" {
+			return lifecycle.ErrUnconfirmed
+		}
 		return nil
 	}
 	spec := lifecycleSpec(t)

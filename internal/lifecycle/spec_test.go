@@ -35,7 +35,9 @@ func lifecycleSpec(t *testing.T) lifecycle.Spec {
 
 type lifecycleDenyLoader struct{}
 
-func (lifecycleDenyLoader) Load(string) (any, error) { return nil, errors.New("external schema denied") }
+func (lifecycleDenyLoader) Load(string) (any, error) {
+	return nil, errors.New("external schema denied")
+}
 
 func TestLifecycleSchemaExampleAndCanonicalSpecRemainOffline(t *testing.T) {
 	t.Setenv("VAULT_ADDR", "private-invalid-address")

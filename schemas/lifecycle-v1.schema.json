@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:secretwright:lifecycle:v1",
+  "title": "Secretwright credential lifecycle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "name", "provider", "consumer", "verify", "policy"],
+  "properties": {
+    "api_version": {"const": "secretwright/lifecycle/v1"},
+    "name": {"$ref": "#/$defs/name"},
+    "provider": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "auth_mount", "role"],
+      "properties": {"kind": {"const": "approle"}, "auth_mount": {"$ref": "#/$defs/mount"}, "role": {"$ref": "#/$defs/name"}}
+    },
+    "consumer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {"kind": {"const": "token-file"}, "path": {"type": "string", "minLength": 2, "maxLength": 4096, "pattern": "^/"}}
+    },
+    "verify": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "mount", "kv_version", "path"],
+      "properties": {"kind": {"const": "kv-read"}, "mount": {"$ref": "#/$defs/mount"}, "kv_version": {"type": "integer", "const": 2}, "path": {"type": "string", "minLength": 2, "maxLength": 4096, "pattern": "^/"}}
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rotate_below", "minimum_new_ttl"],
+      "properties": {"rotate_below": {"$ref": "#/$defs/duration"}, "minimum_new_ttl": {"$ref": "#/$defs/duration"}}
+    }
+  },
+  "$defs": {
+    "name": {"type": "string", "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$"},
+    "mount": {"type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[a-z0-9][a-z0-9_.-]*(/[a-z0-9][a-z0-9_.-]*)*$"},
+    "duration": {"type": "string", "minLength": 2, "maxLength": 64}
+  }
+}

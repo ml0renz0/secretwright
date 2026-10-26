@@ -44,12 +44,17 @@ Si el fuzzer encuentra un fallo, Go guarda la entrada en `testdata/fuzz`; Action
 | Blueprints | Validación offline, variables tipadas, DAG, conflictos y denegaciones antes de escribir, seis creaciones reales, UUIDs dependientes, plan posterior vacío y segunda aplicación con cero escrituras. |
 | Templates de arquitectura | Seis patrones, composición con montaje compartido, render offline, IDs estables, expansión acotada, aislamiento entre usuarios/apps/entornos/tenants y aplicación idempotente con F07. Los aliases de usuarios son exclusivos de la fixture. |
 | Reconciliación | Adopción explícita, inventario privado, binding de destino, cambios propios, drift bloqueado y reparación autorizada, recursos retenidos, identidad estable, referencias a nuevas identidades, checkpoints pendientes y recuperación sin escrituras Vault. |
+| Ciclo de vida | Rotación AppRole con probe KV efectivo, publicación del token nuevo, anterior válido hasta confirmación explícita y revocado después, probe fallido sin cambiar consumidor, noops/dry-run, recuperación sin replay y TTL real tras renovar tokens. |
+| Leases | PostgreSQL efímero con credenciales dinámicas: lookup, renovación de TTL, conexión SQL antes de revocar y autenticación rechazada después. El lease exacto y las credenciales nunca aparecen en informes. |
+| YAML/JSON | Seis templates generan YAML por defecto o JSON explícito; los blueprints resultantes se revalidan y conservan tipos, enteros y HCL. Configuraciones y recibos lifecycle admiten ambos formatos. |
 
 Los proxies de las pruebas reales inyectan cambios o cortan respuestas en puntos deterministas; las operaciones siguen llegando a Vault. Así se puede comprobar tanto el informe del cliente como el estado real que quedó en el servidor.
 
 F09 añade comprobaciones del inventario local: JSON estricto, límites, archivos `0600`, exclusividad del lock, snapshots separados, detección de reemplazos y revisión incremental de checkpoints. La aceptación de backend verifica conservación de RoleID, SecretIDs, alias metadata, CIDRs, metadata y aliases no administrados, además de ausencia de HCL o credenciales en inventario e informes. Las APIs sin CAS conservan una carrera entre lectura y escritura; estos tests no acreditan exclusividad remota ni detección de una política borrada y recreada idéntica.
 
-El laboratorio genera sus propios tokens, ignora las variables Vault del operador y elimina la fixture al terminar. Para ejecutar contra un laboratorio ya preparado, `make integration` requiere `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`.
+F10 comprueba también recibos y artefactos privados, exclusión de locks, reemplazos externos, preservación de UID/GID del consumidor, fases inciertas y ausencia de reintentos de emisión o login. La prueba de credenciales no demuestra recarga de una aplicación: ese paso exige una confirmación externa antes de retire.
+
+El laboratorio genera sus propios tokens, ignora las variables Vault del operador y elimina la fixture al terminar. CI activa `VAULT_TEST_REQUIRE_DATABASE=1`: la ausencia de Docker o de la fixture PostgreSQL falla el job. El fallback local con un binario Vault sin Docker omite explícitamente las pruebas de base de datos. Para ejecutar contra un laboratorio ya preparado, `make integration` requiere `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`; las variables de la fixture PostgreSQL se documentan en `scripts/integration.sh`.
 
 ## Alcance
 
