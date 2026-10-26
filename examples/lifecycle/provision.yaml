@@ -1,0 +1,28 @@
+api_version: secretwright/v1
+name: lifecycle-demo
+resources:
+  - id: storage
+    kind: kv_mount
+    name: lifecycle-demo
+    spec: {version: 2}
+  - id: reader
+    kind: policy
+    name: lifecycle-demo-read
+    depends_on: [storage]
+    spec:
+      policy: |
+        path "lifecycle-demo/data/payments/health" {
+          capabilities = ["read"]
+        }
+  - id: application
+    kind: approle
+    name: payments-api
+    depends_on: [reader]
+    spec:
+      auth_mount: approle
+      token_policies: [lifecycle-demo-read]
+      token_ttl: 15m
+      token_max_ttl: 1h
+      secret_id_ttl: 1h
+      secret_id_num_uses: 1
+      token_num_uses: 0

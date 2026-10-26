@@ -91,4 +91,6 @@ jobs:
       - name: Download locked dependencies
         run: go mod download
       - name: Start ephemeral Vault, test and clean up
+        env:
+          VAULT_TEST_REQUIRE_DATABASE: '1'
         run: make integration-local

@@ -1,0 +1,2 @@
+# Copy to a private 0600 file and replace this with the exact existing lease ID.
+lease_id: database/creds/example/replace-with-exact-lease-id

@@ -53,7 +53,7 @@ def main():
             target.write(source)
         artifacts.append(path)
 
-    def run(name, arguments, expected=0, online=False):
+    def run(name, arguments, expected=0, online=False, json_output=True):
         output, diagnostic = fixture / ('f08-' + name + '.json'), fixture / ('f08-' + name + '.err')
         command = [str(binary), *arguments]
         if online:
@@ -69,6 +69,9 @@ def main():
         require(result.returncode == expected, 'Architecture CLI returned an unexpected exit code [check=' + name + '].')
         require((not errors) if expected == 0 else bool(errors), 'Architecture CLI emitted unexpected diagnostics.')
         require(all(value not in body + errors for value in forbidden), 'Architecture CLI exposed a credential, secret, or rejected input.')
+        if not json_output:
+            require(expected == 0 or not body, 'Rejected architecture command emitted partial successful output.')
+            return None, body
         documents = decode_documents(body)
         require(expected == 0 or not documents, 'Rejected architecture command emitted partial successful JSON.')
         return (documents[0] if len(documents) == 1 else documents), body
@@ -94,17 +97,32 @@ def main():
     schema, _ = run('schema', ['template', 'schema'])
     require(schema.get('$id') == 'urn:secretwright:architecture:v1' and '$schema' in schema, 'Architecture schema is not the published local version.')
     for name in expected_catalog:
-        example, source = run('show-' + name, ['template', 'show', name])
+        example, source = run('show-' + name, ['template', 'show', '--format', 'json', name])
         require(example.get('api_version') == 'secretwright/architecture/v1' and example.get('instances', [{}])[0].get('template') == name, 'Architecture show did not return an editable complete manifest.')
         path = fixture / ('f08-example-' + name + '.json')
         write_file(path, source)
-        rendered, first = run('render-' + name, ['template', 'render', '--file', str(path)])
-        _, second = run('repeat-' + name, ['template', 'render', '--file', str(path)])
+        rendered, first = run('render-' + name, ['template', 'render', '--format', 'json', '--file', str(path)])
+        _, second = run('repeat-' + name, ['template', 'render', '--format', 'json', '--file', str(path)])
         require(first == second and rendered.get('api_version') == 'secretwright/v1' and rendered.get('resources'), 'Architecture output is not a deterministic F07 descriptor.')
         blueprint_file = fixture / ('f08-blueprint-' + name + '.json')
         write_file(blueprint_file, first)
         validated, _ = run('validate-' + name, ['blueprint', 'validate', '--file', str(blueprint_file)])
         require(validated.get('resources') == len(rendered['resources']), 'Architecture output was rejected by F07 offline validation.')
+
+        _, yaml_source = run('show-default-yaml-' + name, ['template', 'show', name], json_output=False)
+        _, explicit_yaml = run('show-explicit-yaml-' + name, ['template', 'show', '--format', 'yaml', name], json_output=False)
+        require(yaml_source == explicit_yaml and not yaml_source.lstrip().startswith('{') and yaml_source.endswith('\n'), 'Architecture show did not default to deterministic editable YAML.')
+        yaml_path = fixture / ('f08-example-' + name + '.yaml')
+        write_file(yaml_path, yaml_source)
+        yaml_as_json, _ = run('yaml-input-json-output-' + name, ['template', 'render', '--format', 'json', '--file', str(yaml_path)])
+        require(yaml_as_json == rendered, 'Default YAML manifest changed typed configuration or policy contents.')
+        _, yaml_blueprint = run('render-default-yaml-' + name, ['template', 'render', '--file', str(yaml_path)], json_output=False)
+        _, repeated_yaml = run('repeat-default-yaml-' + name, ['template', 'render', '--file', str(yaml_path)], json_output=False)
+        require(yaml_blueprint == repeated_yaml and not yaml_blueprint.lstrip().startswith('{') and yaml_blueprint.endswith('\n'), 'Architecture render did not default to deterministic YAML.')
+        yaml_blueprint_file = fixture / ('f08-blueprint-' + name + '.yaml')
+        write_file(yaml_blueprint_file, yaml_blueprint)
+        validated_yaml, _ = run('validate-yaml-' + name, ['blueprint', 'validate', '--file', str(yaml_blueprint_file)])
+        require(validated_yaml == validated, 'Default YAML blueprint did not preserve complete validated resource specifications.')
 
     STAGE = 'offline-errors-and-shell'
     invalid = fixture / 'f08-invalid.json'
@@ -113,9 +131,11 @@ def main():
     run('reject-stdin', ['template', 'render', '--file', '-'], expected=1)
     run('reject-connection', ['template', 'render', '--file', str(invalid), '--token-file', str(fixture / 'missing-f08-token')], expected=1)
     run('reject-unknown-template', ['template', 'show', 'private-f08-unknown-value'], expected=1)
+    run('reject-format', ['template', 'show', '--format', 'private-f08-unknown-value', 'single-app'], expected=1)
+    run('reject-catalog-format', ['template', 'list', '--format', 'yaml'], expected=1)
     offline_script = fixture / 'f08-offline-session.sw'
     example_file = fixture / 'f08-example-single-user.json'
-    write_file(offline_script, 'template list\ntemplate schema\ntemplate show single-user\ntemplate render --file "' + str(example_file) + '"\nhistory\n')
+    write_file(offline_script, 'template list\ntemplate schema\ntemplate show --format json single-user\ntemplate render --format json --file "' + str(example_file) + '"\nhistory\n')
     session, _ = run('offline-session', ['shell', '--address', 'private-f08-invalid-address', '--token-file', str(fixture / 'missing-f08-token'), '--script', str(offline_script)])
     require(isinstance(session, list) and len(session) == 5 and session[3].get('api_version') == 'secretwright/v1' and session[4] == [], 'Architecture shell commands consulted connection credentials or entered history.')
 
@@ -128,7 +148,7 @@ def main():
     ]}
     manifest_file = fixture / 'f08-composition.json'
     write_file(manifest_file, json.dumps(manifest))
-    rendered, body = run('composition-render', ['template', 'render', '--file', str(manifest_file)])
+    rendered, body = run('composition-render', ['template', 'render', '--format', 'json', '--file', str(manifest_file)])
     require(sum(item.get('kind') == 'kv_mount' for item in rendered['resources']) == 1 and len(rendered['resources']) == 9, 'Architecture composition did not coalesce its shared mount.')
     blueprint_file = fixture / 'f08-composed-blueprint.json'
     write_file(blueprint_file, body)
@@ -163,7 +183,7 @@ def main():
     for path in captures:
         require(all(value not in path.read_text() for value in forbidden), 'Architecture smoke exposed a credential or secret in captured output.')
     require(set(fixture.iterdir()) - before == set(artifacts + captures), 'Architecture commands wrote an unexpected state or plan artifact.')
-    print('CLI architecture smoke passed: six offline templates, deterministic rendering, shell, shared-mount composition, idempotence and tenant isolation.')
+    print('CLI architecture smoke passed: six offline templates, YAML defaults and JSON compatibility, deterministic rendering, shell, shared-mount composition, idempotence and tenant isolation.')
 
 
 if __name__ == '__main__':

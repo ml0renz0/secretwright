@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F08 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, motor de blueprints y templates de arquitectura. **F09 está implementada en la [PR #11](https://github.com/ml0renz0/secretwright/pull/11), pendiente de revisión y merge**, según su [contrato de reconciliación y drift](docs/features/F09-reconciliation-drift.md). La rotación pertenece a una fase posterior.
+**F00–F09 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, blueprints, templates y reconciliación con inventario privado. **F10 está implementada en la [PR #12](https://github.com/ml0renz0/secretwright/pull/12), pendiente de merge**: rotación AppRole hacia archivos privados y gestión de TTL y leases, según su [contrato](docs/features/F10-lifecycle-rotation.md).
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -129,11 +129,13 @@ Sin `--state`, `apply` conserva las reglas F07: crea lo ausente y conserva lo eq
 ./bin/secretwright template list
 ./bin/secretwright template show single-app
 ./bin/secretwright template schema
-./bin/secretwright template render --file examples/architectures/multi-env.yaml > platform.blueprint.json
-./bin/secretwright blueprint validate --file platform.blueprint.json
+./bin/secretwright template render --file examples/architectures/multi-env.yaml > platform.blueprint.yaml
+./bin/secretwright blueprint validate --file platform.blueprint.yaml
+# Seleccionar JSON explícitamente.
+./bin/secretwright template render --file examples/architectures/multi-env.yaml --format json > platform.blueprint.json
 ```
 
-El catálogo cubre `single-user`, `multi-user`, `single-app`, `multi-app`, `multi-env` y `saas`. Render funciona offline y produce un blueprint F07 completo para revisar y aplicar después. Cada scope recibe una política propia; las aplicaciones reciben AppRoles y los usuarios entidades y grupos. Los usuarios necesitan un enlace de autenticación externo explícito: render no vincula identidades ni emite credenciales.
+El catálogo cubre `single-user`, `multi-user`, `single-app`, `multi-app`, `multi-env` y `saas`. Show y render generan YAML por defecto; `--format json` selecciona JSON. Render funciona offline y produce un blueprint F07 completo para revisar y aplicar después. Cada scope recibe una política propia; las aplicaciones reciben AppRoles y los usuarios entidades y grupos. Los usuarios necesitan un enlace de autenticación externo explícito: render no vincula identidades ni emite credenciales.
 
 Un manifiesto puede componer patrones y compartir un montaje KV v2, manteniendo scopes separados por instancia. El [ejemplo compuesto](examples/architectures/composed-shared-mount.yaml) muestra usuarios y aplicaciones con montaje común. Se rechazan montajes solapados, colisiones y expansiones que superen los 128 recursos. Los ejemplos y el [contrato de F08](docs/features/F08-architecture-templates.md) detallan dimensiones, permisos y límites.
 
@@ -155,6 +157,24 @@ F09 activa la gestión de recursos propios al seleccionar `--state`. `adopt` rec
 El drift externo se bloquea por defecto. `plan/apply --state ... --repair` autoriza su reconciliación o el reconocimiento de un baseline ya equivalente. Los pending de escrituras inciertas bloquean la operación normal: `blueprint recover --file ... --state ...` consulta y recupera checkpoints locales sin escribir en Vault; una creación incierta existente necesita además `--adopt-pending` para reclamarla.
 
 El inventario privado `0600` contiene metadatos y hashes, sin HCL, specs ni credenciales, y queda ligado a cluster, namespace y dirección configurada. Es una declaración local confiada, sin exclusividad remota. Un lock cooperativo y checkpoints atómicos protegen el archivo; las APIs administrativas de Vault siguen sin CAS. Los [ejemplos de reconciliación](examples/reconciliation/README.md) y el [contrato F09](docs/features/F09-reconciliation-drift.md) detallan las garantías, recuperación y límites.
+
+## Ciclo de vida y rotación
+
+```bash
+./bin/secretwright lifecycle example > rotation.yaml
+./bin/secretwright lifecycle validate --file rotation.yaml
+./bin/secretwright lifecycle rotate --file rotation.yaml \
+  --receipt /var/lib/secretwright/app.rotation.yaml --dry-run --token-file operator-token
+./bin/secretwright lifecycle rotate --file rotation.yaml \
+  --receipt /var/lib/secretwright/app.rotation.yaml --token-file operator-token
+# Tras comprobar que la aplicación ha recargado el token nuevo:
+./bin/secretwright lifecycle retire --file rotation.yaml \
+  --receipt /var/lib/secretwright/app.rotation.yaml --ack-consumer --token-file operator-token
+```
+
+La configuración selecciona un AppRole existente, un archivo consumidor privado y una lectura KV v2 para verificar la candidata. Rotate emite y prueba la nueva credencial antes de publicar el archivo atómicamente. La anterior sigue viva hasta retire con confirmación externa. Los recibos guardan metadatos; los secretos de recuperación quedan en artefactos separados `0600`. Recover reconoce checkpoints sin repetir emisión, login, publicación ni revocación.
+
+`lifecycle token inspect|renew` consulta y renueva tokens privados; `lifecycle lease inspect|renew|revoke` gestiona un lease exacto leído de un archivo privado YAML o JSON. Los informes muestran el TTL real concedido. Los comandos son puntuales, aptos para cron o timers externos; no existe un daemon. El [laboratorio de rotación](examples/lifecycle/README.md) y el [contrato F10](docs/features/F10-lifecycle-rotation.md) describen preparación, recuperación y límites.
 
 ## Comprobar autenticación
 
@@ -313,7 +333,7 @@ Las pruebas de integración necesitan un servidor Vault real. El laboratorio pre
 make integration-local
 ```
 
-El laboratorio utiliza Docker o un ejecutable `vault` ya instalado y elimina los recursos que crea al terminar. No descarga automáticamente herramientas en el equipo. Docker o `vault` son requisitos de las pruebas locales, no del binario Secretwright.
+El laboratorio utiliza Docker o un ejecutable `vault` ya instalado y elimina los recursos que crea al terminar. Con Docker añade PostgreSQL efímero para probar leases renovables y revocación efectiva de acceso SQL; CI exige esta fixture. El fallback local sin Docker señala explícitamente que omite esa parte. Docker o `vault` son requisitos de las pruebas locales, no del binario Secretwright.
 
 `make integration` admite un servidor de desarrollo ya preparado mediante `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`. El laboratorio usa ese archivo para preparar sus propios tokens, montajes y datos de prueba. Los contratos de [F01](docs/features/F01-connectivity-authentication.md), [F02](docs/features/F02-kv-read-navigation.md), [F03](docs/features/F03-kv-write-versioning.md) y [F04](docs/features/F04-interactive-shell.md) detallan los escenarios.
 
@@ -334,6 +354,7 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F07](docs/features/F07-blueprint-engine.md)
 - [Contrato de F08](docs/features/F08-architecture-templates.md)
 - [Contrato de F09](docs/features/F09-reconciliation-drift.md)
+- [Contrato de F10](docs/features/F10-lifecycle-rotation.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 
