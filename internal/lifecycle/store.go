@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ml0renz0/secretwright/internal/fileformat"
+	"github.com/ml0renz0/secretwright/internal/vault"
 )
 
 // Store binds one local rotation checkpoint to an existing private consumer.
@@ -109,11 +110,14 @@ func Open(spec Spec, path string, format fileformat.Format, writable bool) (*Sto
 			return nil, ErrUnconfirmed
 		}
 		if file.Chmod(0o600) != nil {
-			_ = store.Close()
+			store.abortOpen()
 			return nil, ErrIO
 		}
 	}
-	fail := func(err error) (*Store, error) { _ = store.Close(); return nil, err }
+	fail := func(err error) (*Store, error) {
+		store.abortOpen()
+		return nil, err
+	}
 	_, err = os.Lstat(path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -136,10 +140,29 @@ func Open(spec Spec, path string, format fileformat.Format, writable bool) (*Sto
 			return fail(err)
 		}
 	}
-	if !store.parentsUnchanged() {
-		return fail(ErrConflict)
+	if err := store.localPreflight(); err != nil {
+		return fail(err)
 	}
 	return store, nil
+}
+
+func (store *Store) localPreflight() error {
+	if !store.receiptUnchanged() || store.writable && !store.ownsLock() {
+		return ErrConflict
+	}
+	_, _, err := store.consumer()
+	return err
+}
+
+// Constructor cleanup checks identity alone: even a chmod of our own lock
+// must not leave an orphan, while a replacement inode belongs to its writer.
+func (store *Store) abortOpen() {
+	if store.lock != nil {
+		_ = store.lock.Close()
+		store.lock = nil
+		removePrivateOwned(store.path+".lock", store.lockInfo)
+	}
+	store.closed = true
 }
 
 func (store *Store) parentsUnchanged() bool {
@@ -205,27 +228,60 @@ func (store *Store) generationPath() string {
 }
 
 func (store *Store) directoriesUnchanged() bool {
+	return store.generationDirectoriesUnchanged(store.state.Generation)
+}
+
+func (store *Store) generationDirectoriesUnchanged(name string) bool {
 	root, rootErr := os.Lstat(store.path + ".d")
-	generation, generationErr := os.Lstat(store.generationPath())
+	generation, generationErr := os.Lstat(filepath.Join(store.path+".d", name))
 	return rootErr == nil && generationErr == nil && privateDirectory(root) && privateDirectory(generation) && store.artifactRoot != nil && store.generationDirectory != nil && os.SameFile(store.artifactRoot, root) && os.SameFile(store.generationDirectory, generation)
+}
+
+func (store *Store) terminal() bool {
+	return store.state.Phase == "retired" || store.state.Phase == "aborted"
+}
+
+func (store *Store) terminalDirectoryAbsent() bool {
+	if !store.terminal() {
+		return false
+	}
+	root, rootErr := os.Lstat(store.path + ".d")
+	if store.artifactRoot == nil {
+		return errors.Is(rootErr, os.ErrNotExist)
+	}
+	if rootErr != nil || !privateDirectory(root) || !os.SameFile(store.artifactRoot, root) {
+		return false
+	}
+	if store.generationDirectory == nil {
+		_, err := os.Lstat(store.generationPath())
+		return errors.Is(err, os.ErrNotExist)
+	}
+	return false
 }
 
 func (store *Store) bindArtifacts() error {
 	root, err := os.Lstat(store.path + ".d")
+	if errors.Is(err, os.ErrNotExist) && store.terminal() {
+		return nil
+	}
 	if err != nil || !privateDirectory(root) {
 		return ErrConflict
 	}
+	store.artifactRoot = root
 	generation, err := os.Lstat(store.generationPath())
+	if errors.Is(err, os.ErrNotExist) && store.terminal() {
+		return nil
+	}
 	if err != nil || !privateDirectory(generation) {
 		return ErrConflict
 	}
-	store.artifactRoot, store.generationDirectory = root, generation
+	store.generationDirectory = generation
 	for _, proof := range []struct{ kind, digest string }{{"old", store.state.OldDigest}, {"bundle", store.state.BundleDigest}, {"new", store.state.NewDigest}} {
-		if proof.digest == "" {
+		value, _, err := store.load(proof.kind)
+		if errors.Is(err, vault.ErrNotFound) && (store.terminal() || proof.digest == "") {
 			continue
 		}
-		value, _, err := store.load(proof.kind)
-		if err != nil || value.Digest != proof.digest {
+		if err != nil || proof.digest != "" && value.Digest != proof.digest {
 			return ErrConflict
 		}
 	}
@@ -350,11 +406,17 @@ func (store *Store) Prepare(next Receipt, old PrivateFile) error {
 	if err := store.createGeneration(next.Generation); err != nil {
 		return err
 	}
+	if !store.generationDirectoriesUnchanged(next.Generation) {
+		return ErrConflict
+	}
 	if err := createPrivateArtifact(filepath.Join(store.path+".d", next.Generation, "old.token"), consumer.Data); err != nil {
 		return err
 	}
-	if !store.mayWrite() {
+	if !store.mayWrite() || !store.generationDirectoriesUnchanged(next.Generation) {
 		return ErrConflict
+	}
+	if _, _, err := store.consumer(); err != nil {
+		return err
 	}
 	return store.writeReceipt(next)
 }
@@ -375,6 +437,9 @@ func (store *Store) Save(next Receipt) error {
 	if !store.boundReceipt(next) || next.Revision != previous.Revision+1 || next.Generation != previous.Generation || next.Target != previous.Target || next.RoleIdentity != previous.RoleIdentity || next.EntityID != previous.EntityID || next.OldDigest != previous.OldDigest || (previous.NewDigest != "" && next.NewDigest != previous.NewDigest) || (previous.BundleDigest != "" && next.BundleDigest != previous.BundleDigest) || !store.directoriesUnchanged() {
 		return ErrConflict
 	}
+	if _, _, err := store.consumer(); err != nil {
+		return err
+	}
 	return store.writeReceipt(next)
 }
 
@@ -383,14 +448,30 @@ func (store *Store) load(kind string) (PrivateFile, os.FileInfo, error) {
 	if !ok {
 		return PrivateFile{}, nil, ErrInvalidLifecycle
 	}
-	if store.closed || store.state.APIVersion == "" || !store.directoriesUnchanged() {
+	if store.closed || store.state.APIVersion == "" {
+		return PrivateFile{}, nil, ErrConflict
+	}
+	if store.terminalDirectoryAbsent() {
+		return PrivateFile{}, nil, vault.ErrNotFound
+	}
+	if !store.directoriesUnchanged() {
 		return PrivateFile{}, nil, ErrConflict
 	}
 	limit := int64(privateTokenLimit)
 	if kind == "bundle" {
 		limit = privateDocumentLimit
 	}
-	body, identity, err := readPrivateBytes(filepath.Join(store.generationPath(), name), limit)
+	path := filepath.Join(store.generationPath(), name)
+	if _, err := os.Lstat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if !store.directoriesUnchanged() {
+				return PrivateFile{}, nil, ErrConflict
+			}
+			return PrivateFile{}, nil, vault.ErrNotFound
+		}
+		return PrivateFile{}, nil, ErrIO
+	}
+	body, identity, err := readPrivateBytes(path, limit)
 	if err != nil {
 		return PrivateFile{}, nil, err
 	}

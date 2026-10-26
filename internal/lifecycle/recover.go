@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"bytes"
 	"context"
+	"errors"
 
 	"github.com/ml0renz0/secretwright/internal/vault"
 )
@@ -37,7 +38,7 @@ func Recover(ctx context.Context, spec Spec, store Session, backend Backend, aba
 			if info.Exists {
 				return report, ErrConflict
 			}
-		} else if r.NewDigest != "" {
+		} else if r.NewDigest != "" || !errors.Is(err, vault.ErrNotFound) {
 			return report, ErrConflict
 		}
 		if err := savePhase(store, "aborted"); err != nil {
@@ -71,6 +72,9 @@ func Recover(ctx context.Context, spec Spec, store Session, backend Backend, aba
 		minimum, _ := lifecycleSeconds(spec.Policy.MinimumNewTTL)
 		if err != nil || info.TTLSeconds < minimum {
 			return report, ErrPartial
+		}
+		if !samePolicies(info.Policies, proof.role.State.Role.TokenPolicies) {
+			return report, ErrConflict
 		}
 		if err := backend.Probe(ctx, spec, known.Token); err != nil {
 			return report, partialError(err)

@@ -15,6 +15,7 @@ import (
 	"github.com/ml0renz0/secretwright/internal/fileformat"
 	"github.com/ml0renz0/secretwright/internal/lifecycle"
 	"github.com/ml0renz0/secretwright/internal/managedstate"
+	"github.com/ml0renz0/secretwright/internal/vault"
 )
 
 const ioOldToken = "private-f10-old-token"
@@ -186,6 +187,9 @@ func TestRotationPrivateReaderRejectsUnsafeFilesWithoutEcho(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "private-token-file")
 			if os.WriteFile(path, fixture.body, fixture.mode) != nil {
 				t.Fatal("could not prepare private reader fixture")
+			}
+			if os.Chmod(path, fixture.mode) != nil {
+				t.Fatal("could not set private reader fixture permissions")
 			}
 			value, err := lifecycle.ReadPrivate(path)
 			ioStaticError(t, err, path)
@@ -536,6 +540,9 @@ func TestRotationPrepareRefusesSymlinkOrPublicArtifactDirectories(t *testing.T) 
 				if os.Mkdir(root, 0o755) != nil {
 					t.Fatal("fixture directory failed")
 				}
+				if os.Chmod(root, 0o755) != nil {
+					t.Fatal("fixture directory mode failed")
+				}
 			case "symlink-generation":
 				if os.Mkdir(root, 0o700) != nil || os.Symlink(foreign, generation) != nil {
 					t.Fatal("fixture symlink failed")
@@ -543,6 +550,9 @@ func TestRotationPrepareRefusesSymlinkOrPublicArtifactDirectories(t *testing.T) 
 			case "public-generation":
 				if os.Mkdir(root, 0o700) != nil || os.Mkdir(generation, 0o755) != nil {
 					t.Fatal("fixture directory failed")
+				}
+				if os.Chmod(generation, 0o755) != nil {
+					t.Fatal("fixture directory mode failed")
 				}
 			}
 			old, _ := store.Consumer()
@@ -553,5 +563,189 @@ func TestRotationPrepareRefusesSymlinkOrPublicArtifactDirectories(t *testing.T) 
 				t.Error("private generation write followed an external directory")
 			}
 		})
+	}
+}
+
+func TestRotationSaveRejectsConsumerChangedBeforeRetirementCheckpoint(t *testing.T) {
+	for _, change := range []string{"content", "inode", "mode", "symlink"} {
+		t.Run(change, func(t *testing.T) {
+			spec, path := ioFixture(t)
+			store := ioOpen(t, spec, path, "", true)
+			ioPrepare(t, store, spec, fileformat.YAML)
+			receipt := ioAdvance(t, store)
+			if store.Publish(receipt.OldDigest) != nil {
+				t.Fatal("could not publish retirement fixture")
+			}
+			receipt.Revision++
+			receipt.Phase = "published"
+			if store.Save(receipt) != nil {
+				t.Fatal("could not checkpoint retirement fixture")
+			}
+			switch change {
+			case "content":
+				if os.WriteFile(spec.Consumer.Path, []byte(ioOldToken+"\n"), 0o600) != nil {
+					t.Fatal("could not change consumer fixture")
+				}
+			case "inode":
+				replacement := spec.Consumer.Path + ".replacement"
+				if os.WriteFile(replacement, []byte(ioNewToken+"\n"), 0o600) != nil || os.Rename(replacement, spec.Consumer.Path) != nil {
+					t.Fatal("could not replace consumer fixture")
+				}
+			case "mode":
+				if os.Chmod(spec.Consumer.Path, 0o644) != nil {
+					t.Fatal("could not change consumer mode")
+				}
+			case "symlink":
+				target := spec.Consumer.Path + ".target"
+				if os.Rename(spec.Consumer.Path, target) != nil || os.Symlink(target, spec.Consumer.Path) != nil {
+					t.Fatal("could not replace consumer with a symlink")
+				}
+			}
+			before := ioRead(t, path)
+			receipt.Revision++
+			receipt.Phase = "pending_retire"
+			if !errors.Is(store.Save(receipt), lifecycle.ErrConflict) || !bytes.Equal(before, ioRead(t, path)) || store.Snapshot().Phase != "published" {
+				t.Error("changed consumer was accepted by the pre-revocation checkpoint")
+			}
+		})
+	}
+}
+
+func TestRotationTerminalArtifactsCanBeRemovedBeforeTheNextGeneration(t *testing.T) {
+	for _, phase := range []string{"aborted", "retired"} {
+		for _, removed := range []string{"files", "generation", "root"} {
+			t.Run(phase+"/"+removed, func(t *testing.T) {
+				spec, path := ioFixture(t)
+				store := ioOpen(t, spec, path, "", true)
+				receipt := ioPrepare(t, store, spec, fileformat.YAML)
+				if phase == "retired" {
+					receipt = ioAdvance(t, store)
+					if store.Publish(receipt.OldDigest) != nil {
+						t.Fatal("could not publish terminal fixture")
+					}
+					for _, checkpoint := range []string{"published", "pending_retire", "retired"} {
+						receipt.Revision++
+						receipt.Phase = checkpoint
+						if store.Save(receipt) != nil {
+							t.Fatal("could not checkpoint terminal fixture")
+						}
+					}
+				} else {
+					receipt.Revision++
+					receipt.Phase = "aborted"
+					if store.Save(receipt) != nil {
+						t.Fatal("could not abandon fixture")
+					}
+				}
+				if store.Close() != nil {
+					t.Fatal("could not release terminal fixture")
+				}
+				generation := filepath.Join(path+".d", receipt.Generation)
+				switch removed {
+				case "files":
+					for _, name := range []string{"old.token", "new.token", "bundle.json"} {
+						if err := os.Remove(filepath.Join(generation, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+							t.Fatal("could not remove terminal artifact")
+						}
+					}
+				case "generation":
+					if os.RemoveAll(generation) != nil {
+						t.Fatal("could not remove terminal generation")
+					}
+				case "root":
+					if os.RemoveAll(path+".d") != nil {
+						t.Fatal("could not remove terminal artifact root")
+					}
+				}
+				store = ioOpen(t, spec, path, "", true)
+				if _, err := store.Load("old"); !errors.Is(err, vault.ErrNotFound) {
+					t.Error("removed terminal artifact was not reported as absent")
+				}
+				old, err := store.Consumer()
+				if err != nil {
+					t.Fatal("could not read current terminal consumer")
+				}
+				next := ioPrepared(spec, fileformat.YAML)
+				next.Generation = strings.Repeat("2", 32)
+				next.Revision = receipt.Revision + 1
+				next.OldDigest = old.Digest
+				if store.Prepare(next, old) != nil || store.Snapshot().Generation != next.Generation {
+					t.Error("manual terminal retention cleanup prevented a new generation")
+				}
+			})
+		}
+	}
+}
+
+func TestRotationTerminalArtifactsStillRequirePrivateRegularFiles(t *testing.T) {
+	for _, fixture := range []string{"public-file", "symlink-file", "public-root", "symlink-root", "public-generation", "symlink-generation"} {
+		t.Run(fixture, func(t *testing.T) {
+			spec, path := ioFixture(t)
+			store := ioOpen(t, spec, path, "", true)
+			receipt := ioPrepare(t, store, spec, fileformat.YAML)
+			receipt.Revision++
+			receipt.Phase = "aborted"
+			if store.Save(receipt) != nil || store.Close() != nil {
+				t.Fatal("could not checkpoint terminal fixture")
+			}
+			root := path + ".d"
+			generation := filepath.Join(root, receipt.Generation)
+			old := filepath.Join(generation, "old.token")
+			switch fixture {
+			case "public-file":
+				if os.Chmod(old, 0o644) != nil {
+					t.Fatal("could not change artifact mode")
+				}
+			case "public-root":
+				if os.Chmod(root, 0o755) != nil {
+					t.Fatal("could not change root mode")
+				}
+			case "public-generation":
+				if os.Chmod(generation, 0o755) != nil {
+					t.Fatal("could not change generation mode")
+				}
+			default:
+				changed := old
+				if fixture == "symlink-root" {
+					changed = root
+				} else if fixture == "symlink-generation" {
+					changed = generation
+				}
+				target := changed + ".target"
+				if os.Rename(changed, target) != nil || os.Symlink(target, changed) != nil {
+					t.Fatal("could not replace terminal artifact with a symlink")
+				}
+			}
+			opened, err := lifecycle.Open(spec, path, "", true)
+			if err == nil || opened != nil {
+				if opened != nil {
+					_ = opened.Close()
+				}
+				t.Error("terminal cleanup exception accepted unsafe existing artifacts")
+			}
+			ioNoArtifact(t, path+".lock")
+		})
+	}
+}
+
+func TestRotationMissingArtifactDoesNotConflateUnsafeOrUnreadableFiles(t *testing.T) {
+	spec, path := ioFixture(t)
+	store := ioOpen(t, spec, path, "", true)
+	receipt := ioPrepare(t, store, spec, fileformat.YAML)
+	if _, err := store.Load("new"); !errors.Is(err, vault.ErrNotFound) {
+		t.Error("genuinely missing private artifact was not reported as absent")
+	}
+	newPath := filepath.Join(path+".d", receipt.Generation, "new.token")
+	if os.Symlink(newPath+".missing", newPath) != nil {
+		t.Fatal("could not create dangling artifact symlink")
+	}
+	if _, err := store.Load("new"); err == nil || errors.Is(err, vault.ErrNotFound) {
+		t.Error("dangling symlink was treated as an absent credential")
+	}
+	if os.Remove(newPath) != nil || os.WriteFile(newPath, []byte(ioNewToken+"\n"), 0o600) != nil || os.Chmod(newPath, 0o644) != nil {
+		t.Fatal("could not prepare unsafe artifact permissions")
+	}
+	if _, err := store.Load("new"); err == nil || errors.Is(err, vault.ErrNotFound) {
+		t.Error("unsafe existing credential was treated as absent")
 	}
 }

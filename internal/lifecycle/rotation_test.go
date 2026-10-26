@@ -104,7 +104,7 @@ func (store *rotationSession) Put(kind string, body []byte) error {
 func (store *rotationSession) Load(kind string) (lifecycle.PrivateFile, error) {
 	value, found := store.files[kind]
 	if !found {
-		return lifecycle.PrivateFile{}, lifecycle.ErrIO
+		return lifecycle.PrivateFile{}, vault.ErrNotFound
 	}
 	return value, nil
 }

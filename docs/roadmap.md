@@ -2,7 +2,7 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00–F09 están integradas. F10 está en preparación en la [PR #12](https://github.com/ml0renz0/secretwright/pull/12), según su [contrato](features/F10-lifecycle-rotation.md). F11 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
+F00–F09 están integradas. F10 está implementada en la [PR #12](https://github.com/ml0renz0/secretwright/pull/12), pendiente de merge, según su [contrato](features/F10-lifecycle-rotation.md). F11 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
@@ -16,7 +16,7 @@ F00–F09 están integradas. F10 está en preparación en la [PR #12](https://gi
 | **F07** | **Forge: Blueprint Engine** | Descriptor YAML, JSON Schema, variables, dependencias, `validate`, `plan`, `apply` e idempotencia. | Integrada — [PR #8](https://github.com/ml0renz0/secretwright/pull/8), [contrato](features/F07-blueprint-engine.md) |
 | **F08** | **Forge: Architecture Templates** | Blueprints monousuario, multiusuario, monoapp, multiapp, multientorno y SaaS multi-tenant. Composición de patrones. | Integrada — [PR #10](https://github.com/ml0renz0/secretwright/pull/10), [contrato](features/F08-architecture-templates.md) |
 | **F09** | **Forge: Reconciliation & Drift** | Inventario local de propiedad, adopción explícita, cambios deseados, drift bloqueado por defecto, reparación autorizada, recursos retenidos y recuperación de checkpoints. | Integrada — [PR #11](https://github.com/ml0renz0/secretwright/pull/11), [contrato](features/F09-reconciliation-drift.md) |
-| **F10** | **Secrets Lifecycle & Rotation** | Rotación AppRole hacia un archivo privado, confirmación externa antes de retirar, TTL, renovación de tokens y leases exactos, recuperación ante fallos y YAML por defecto. | En preparación — [PR #12](https://github.com/ml0renz0/secretwright/pull/12), [contrato](features/F10-lifecycle-rotation.md) |
+| **F10** | **Secrets Lifecycle & Rotation** | Rotación AppRole hacia un archivo privado, confirmación externa antes de retirar, TTL, renovación de tokens y leases exactos, recuperación ante fallos y YAML por defecto. | Implementada, pendiente de merge — [PR #12](https://github.com/ml0renz0/secretwright/pull/12), [contrato](features/F10-lifecycle-rotation.md) |
 | **F11** | **X.509 & PKI Management** | Gestión y análisis de certificados, claves privadas, SAN, caducidades y validación criptográfica mediante Go, sin OpenSSL externo. | Pendiente |
 | **F12** | **Kerberos & Keytab Management** | Lectura y validación de keytabs, principales, KVNO, tipos de cifrado e integración con Vault, sin `klist` externo. | Pendiente |
 | **F13** | **Packaging, Releases & Distribution** | Binarios autocontenidos, builds multiplataforma, imágenes Docker mínimas, GoReleaser, SBOM, firma de artefactos y documentación. | Pendiente |

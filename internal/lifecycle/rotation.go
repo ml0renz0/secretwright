@@ -43,7 +43,7 @@ func noRoot(policies []string) bool {
 		return false
 	}
 	for _, policy := range policies {
-		if !lifecycleName.MatchString(policy) || strings.EqualFold(policy, "root") {
+		if !lifecyclePolicyName.MatchString(policy) || strings.EqualFold(policy, "root") {
 			return false
 		}
 	}
@@ -160,10 +160,7 @@ func candidate(ctx context.Context, spec Spec, store Session, backend Backend, r
 	if err != nil {
 		return PrivateFile{}, vault.TokenLifecycleInfo{}, err
 	}
-	policies, expected := append([]string{}, info.Policies...), append([]string{}, role.State.Role.TokenPolicies...)
-	sort.Strings(policies)
-	sort.Strings(expected)
-	if !reflect.DeepEqual(policies, expected) {
+	if !samePolicies(info.Policies, role.State.Role.TokenPolicies) {
 		return PrivateFile{}, vault.TokenLifecycleInfo{}, ErrConflict
 	}
 	threshold, _ := lifecycleSeconds(spec.Policy.MinimumNewTTL)
@@ -174,6 +171,13 @@ func candidate(ctx context.Context, spec Spec, store Session, backend Backend, r
 		return PrivateFile{}, vault.TokenLifecycleInfo{}, safeError(err)
 	}
 	return file, info, nil
+}
+
+func samePolicies(actual, expected []string) bool {
+	left, right := append([]string{}, actual...), append([]string{}, expected...)
+	sort.Strings(left)
+	sort.Strings(right)
+	return reflect.DeepEqual(left, right)
 }
 
 func savePhase(store Session, phase string) error {
@@ -325,6 +329,15 @@ func Rotate(ctx context.Context, spec Spec, store Session, backend Backend, dryR
 	if store.Snapshot().Phase != "verified" {
 		return reportFor(spec, "rotate", store), ErrConflict
 	}
+	// A probe may take time. Re-read consumer and role identity after it, before
+	// the write-ahead checkpoint for publishing an externally visible file.
+	lateProof, err := preflight(ctx, spec, store, backend)
+	if err != nil {
+		return reportFor(spec, "rotate", store), partialError(err)
+	}
+	if !reflect.DeepEqual(proof.role, lateProof.role) {
+		return reportFor(spec, "rotate", store), partialError(ErrConflict)
+	}
 	if err := savePhase(store, "pending_publish"); err != nil {
 		return reportFor(spec, "rotate", store), partialError(err)
 	}
@@ -382,6 +395,15 @@ func Retire(ctx context.Context, spec Spec, store Session, backend Backend, ack 
 	}
 	if err := savePhase(store, "pending_retire"); err != nil {
 		return reportFor(spec, "retire", store), partialError(err)
+	}
+	// The consumer may have changed while the new token was probed or the old
+	// one was looked up. Confirm the installed credential again before revoke.
+	lateProof, err := preflight(ctx, spec, store, backend)
+	if err != nil {
+		return reportFor(spec, "retire", store), partialError(err)
+	}
+	if !reflect.DeepEqual(proof.role, lateProof.role) {
+		return reportFor(spec, "retire", store), partialError(ErrConflict)
 	}
 	if oldInfo.Exists {
 		if err := backend.Revoke(ctx, old.Token); err != nil {

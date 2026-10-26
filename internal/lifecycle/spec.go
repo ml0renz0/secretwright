@@ -17,6 +17,7 @@ import (
 )
 
 var lifecycleName = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
+var lifecyclePolicyName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 var lifecycleHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var lifecycleGeneration = regexp.MustCompile(`^[0-9a-f]{32}$`)
 var lifecycleUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

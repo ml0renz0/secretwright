@@ -30,7 +30,7 @@ policy:
   minimum_new_ttl: 10m
 ```
 
-El manifiesto admite YAML y JSON estrictos: campos desconocidos, duplicados, aliases, anchors, varios documentos, tags personalizados, interpolación y números ambiguos se rechazan. La entrada está limitada a 1 MiB, 64 niveles y 10 000 nodos. El esquema Draft 2020-12 publicado y embebido es `schemas/lifecycle-v1.schema.json`, con ID `urn:secretwright:lifecycle:v1`; no se cargan referencias externas.
+El manifiesto admite YAML y JSON estrictos: campos desconocidos, duplicados, aliases, anchors, varios documentos, tags personalizados y números ambiguos se rechazan. No se realiza interpolación ni se ejecutan funciones o inclusiones. La entrada está limitada a 1 MiB, 64 niveles y 10 000 nodos. El esquema Draft 2020-12 publicado y embebido es `schemas/lifecycle-v1.schema.json`, con ID `urn:secretwright:lifecycle:v1`; no se cargan referencias externas.
 
 El montaje AppRole y el rol deben existir. El archivo consumidor también debe existir, contener un token válido de ese AppRole y tener permisos `0600`; su ruta es absoluta. La instalación inicial sigue usando F06. Se exige un token service, finito, sin política root, sin usos limitados y distinto del token operador. El rol también debe emitir tokens de usos ilimitados y TTL finito. El probe es una lectura KV v2 con montaje y versión explícitos; su valor se descarta.
 
