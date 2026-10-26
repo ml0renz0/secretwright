@@ -1,0 +1,12 @@
+api_version: secretwright/pki/v1
+name: web
+common_name: web.example.test
+dns_names:
+  - web.example.test
+ip_addresses:
+  - 127.0.0.1
+ttl: 1h
+usage: server-auth
+key:
+  type: ecdsa
+  bits: 256

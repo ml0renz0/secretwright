@@ -607,3 +607,5 @@ python3 ./scripts/template_smoke.py ./bin/secretwright "$fixture_dir"
 python3 ./scripts/reconcile_smoke.py ./bin/secretwright "$fixture_dir"
 
 python3 ./scripts/lifecycle_smoke.py ./bin/secretwright "$fixture_dir"
+
+python3 ./scripts/pki_smoke.py ./bin/secretwright "$fixture_dir"

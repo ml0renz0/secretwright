@@ -10,7 +10,7 @@ Estas pruebas incluyen servidores HTTP y backends controlados para provocar erro
 
 ## Fuzzing
 
-Cuatro jobs generan entradas adversariales durante 20 segundos cada uno, con el detector de carreras y dos workers. La minimización de cada entrada se limita a 100 ms para reservar el presupuesto de CI a explorar más casos. Las semillas del corpus se ejecutan también como regresiones en `make test`.
+Cinco jobs generan entradas adversariales durante 20 segundos cada uno, con el detector de carreras y dos workers. La minimización de cada entrada se limita a 100 ms para reservar el presupuesto de CI a explorar más casos. Las semillas del corpus se ejecutan también como regresiones en `make test`.
 
 | Objetivo | Propiedades comprobadas |
 | --- | --- |
@@ -18,6 +18,7 @@ Cuatro jobs generan entradas adversariales durante 20 segundos cada uno, con el 
 | `FuzzRender` | Arquitecturas que producen un blueprint F07 válido y determinista, o un error fijo sin una salida parcial. |
 | `FuzzDecode` | Inventarios JSON estrictos, decodificación determinista, errores fijos y serialización de estados válidos que conserva su contenido. |
 | `FuzzResolvePath` | Navegación canónica bajo la raíz lógica, rechazo de caracteres ambiguos, estabilidad al reutilizar una ruta y ausencia de diagnósticos con la entrada rechazada. |
+| `FuzzInspectPEM` | Parsers X.509/CSR/clave sin pánicos, con resultados deterministas, errores fijos y metadatos sin material PEM ni claves privadas. |
 
 Se pueden ampliar localmente:
 
@@ -26,6 +27,7 @@ go test -race -run='^$' -fuzz='^FuzzLoad$' -fuzztime=2m -fuzzminimizetime=100ms 
 go test -race -run='^$' -fuzz='^FuzzRender$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/architecture
 go test -race -run='^$' -fuzz='^FuzzDecode$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/managedstate
 go test -race -run='^$' -fuzz='^FuzzResolvePath$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/vault
+go test -race -run='^$' -fuzz='^FuzzInspectPEM$' -fuzztime=2m -fuzzminimizetime=100ms -parallel=2 ./internal/pki
 ```
 
 Si el fuzzer encuentra un fallo, Go guarda la entrada en `testdata/fuzz`; Actions conserva ese corpus como artefacto durante siete días. Para reproducirlo se utiliza el comando que imprime Go. El presupuesto de CI es acotado y no sustituye las regresiones explícitas de las operaciones de escritura.
@@ -47,6 +49,7 @@ Si el fuzzer encuentra un fallo, Go guarda la entrada en `testdata/fuzz`; Action
 | Ciclo de vida | Rotación AppRole con probe KV efectivo, publicación del token nuevo, anterior válido hasta confirmación explícita y revocado después, probe fallido sin cambiar consumidor, noops/dry-run, recuperación sin replay y TTL real tras renovar tokens. |
 | Leases | PostgreSQL efímero con credenciales dinámicas: lookup, renovación de TTL, conexión SQL antes de revocar y autenticación rechazada después. El lease exacto y las credenciales nunca aparecen en informes. |
 | YAML/JSON | Seis templates generan YAML por defecto o JSON explícito; los blueprints resultantes se revalidan y conservan tipos, enteros y HCL. Configuraciones y recibos lifecycle admiten ambos formatos. |
+| X.509/PKI | Fixtures Go con raíz, intermedia y leaf; confianza explícita, SAN DNS/IP, tiempo, EKU, CSR firmadas y claves coincidentes. Vault real emite y firma con rol limitado; un handshake TLS demuestra uso efectivo. Revocación comprobada mediante CRL firmada y serial, sin afirmar comprobación automática de revocación por Verify. |
 
 Los proxies de las pruebas reales inyectan cambios o cortan respuestas en puntos deterministas; las operaciones siguen llegando a Vault. Así se puede comprobar tanto el informe del cliente como el estado real que quedó en el servidor.
 
