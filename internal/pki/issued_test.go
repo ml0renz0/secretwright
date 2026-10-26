@@ -23,8 +23,12 @@ func TestCSRPreflightRequiresExactRequestAndSafeExtensions(t *testing.T) {
 		func(c *x509.CertificateRequest) { c.DNSNames = append(c.DNSNames, "foreign.example.test") },
 		func(c *x509.CertificateRequest) { c.IPAddresses = append(c.IPAddresses, net.ParseIP("127.0.0.2")) },
 		func(c *x509.CertificateRequest) { c.EmailAddresses = []string{"private-marker@example.test"} },
-		func(c *x509.CertificateRequest) { c.URIs = []*url.URL{{Scheme: "spiffe", Host: "private-marker.example.test"}} },
-		func(c *x509.CertificateRequest) { c.ExtraExtensions = []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x03, 0x01, 0x01, 0xff}}} },
+		func(c *x509.CertificateRequest) {
+			c.URIs = []*url.URL{{Scheme: "spiffe", Host: "private-marker.example.test"}}
+		},
+		func(c *x509.CertificateRequest) {
+			c.ExtraExtensions = []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x03, 0x01, 0x01, 0xff}}}
+		},
 	} {
 		_, err := pki.ValidateCSR(spec, fixtureCSR(t, f.leafKey, edit))
 		assertPKIError(t, err)
@@ -47,18 +51,28 @@ func TestIssuedCertificateMustMatchExplicitTrustRequestAndPossessedKey(t *testin
 			t.Error("valid issued or signed certificate failed its native response checks")
 		}
 	}
-	for _, test := range []struct{ name string; edit func(*x509.Certificate) }{
+	for _, test := range []struct {
+		name string
+		edit func(*x509.Certificate)
+	}{
 		{"wrong CN", func(c *x509.Certificate) { c.Subject.CommonName = "foreign.example.test" }},
 		{"extra DNS", func(c *x509.Certificate) { c.DNSNames = append(c.DNSNames, "foreign.example.test") }},
 		{"missing DNS", func(c *x509.Certificate) { c.DNSNames = nil }},
 		{"extra IP", func(c *x509.Certificate) { c.IPAddresses = append(c.IPAddresses, net.ParseIP("127.0.0.2")) }},
 		{"extra email", func(c *x509.Certificate) { c.EmailAddresses = []string{"private-marker@example.test"} }},
-		{"extra URI", func(c *x509.Certificate) { c.URIs = []*url.URL{{Scheme: "spiffe", Host: "private-marker.example.test"}} }},
+		{"extra URI", func(c *x509.Certificate) {
+			c.URIs = []*url.URL{{Scheme: "spiffe", Host: "private-marker.example.test"}}
+		}},
 		{"CA leaf", func(c *x509.Certificate) { c.IsCA = true; c.KeyUsage |= x509.KeyUsageCertSign }},
 		{"wrong EKU", func(c *x509.Certificate) { c.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth} }},
-		{"any EKU", func(c *x509.Certificate) { c.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageAny} }},
+		{"any EKU", func(c *x509.Certificate) {
+			c.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageAny}
+		}},
 		{"longer TTL", func(c *x509.Certificate) { c.NotAfter = fixtureTime.Add(time.Hour + 6*time.Second) }},
-		{"expired", func(c *x509.Certificate) { c.NotBefore = fixtureTime.Add(-2*time.Hour); c.NotAfter = fixtureTime.Add(-time.Second) }},
+		{"expired", func(c *x509.Certificate) {
+			c.NotBefore = fixtureTime.Add(-2 * time.Hour)
+			c.NotAfter = fixtureTime.Add(-time.Second)
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			template := fixtureLeafTemplate()

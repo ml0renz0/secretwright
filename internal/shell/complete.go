@@ -17,7 +17,7 @@ type Lister func(context.Context, string, string) ([]string, error)
 
 var completionCommands = []string{
 	"approle", "auth", "backup", "blueprint", "cat", "cd", "cp", "cptree", "destroy", "exit", "find",
-	"help", "history", "identity", "lifecycle", "ls", "mounts", "mv", "policy", "put", "pwd", "quit", "replace",
+	"help", "history", "identity", "lifecycle", "ls", "mounts", "mv", "pki", "policy", "put", "pwd", "quit", "replace",
 	"restore", "rm", "rmtree", "rollback", "status", "template", "token", "tree", "undelete", "version", "versions",
 }
 

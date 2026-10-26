@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F10 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, blueprints, templates, reconciliación, rotación AppRole y gestión de TTL y leases. **F11 está en preparación**, según su [contrato X.509 y PKI](docs/features/F11-x509-pki.md): inspección criptográfica local y certificados mediante roles PKI existentes en Vault.
+**F00–F10 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, blueprints, templates, reconciliación, rotación AppRole y gestión de TTL y leases. **F11 está implementada en la [PR #13](https://github.com/ml0renz0/secretwright/pull/13), pendiente de merge**, según su [contrato X.509 y PKI](docs/features/F11-x509-pki.md): inspección criptográfica local y certificados mediante roles PKI existentes en Vault.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -184,7 +184,7 @@ La configuración selecciona un AppRole existente, un archivo consumidor privado
 ./bin/secretwright pki csr create --file request.yaml --out web.csr --key-out web.key
 ./bin/secretwright pki sign --mount pki --role web --file request.yaml \
   --csr web.csr --ca-file roots.pem --out web.pem --token-file operator-token
-./bin/secretwright pki cert verify --file web.pem --ca-file roots.pem --hostname web.example.test
+./bin/secretwright pki cert verify --file web.pem --ca-file roots.pem --hostname app.example.test
 ./bin/secretwright pki cert match --file web.pem --key web.key
 ```
 

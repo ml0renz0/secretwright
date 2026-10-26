@@ -43,7 +43,10 @@ func TestCertificateInspectionReportsPublicMetadataAndRealExpiry(t *testing.T) {
 	if leaf.SHA256 != hex.EncodeToString(fingerprint[:]) || leaf.Serial != "01:ab" || leaf.TTLSeconds != 3600 || leaf.Validity != "valid" || leaf.IsCA || leaf.NotBefore.Location() != time.UTC || leaf.NotAfter.Location() != time.UTC || len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "app.example.test" || len(leaf.IPAddresses) != 1 || leaf.IPAddresses[0] != "127.0.0.1" || leaf.PublicKeySHA256 == "" || leaf.Key.PublicKeySHA256 != leaf.PublicKeySHA256 {
 		t.Error("certificate inspection lost its native identity or validity metadata")
 	}
-	for _, check := range []struct{ at time.Time; status string }{{fixtureTime.Add(2*time.Hour), "expired"}, {fixtureTime.Add(-2*time.Minute), "not_yet_valid"}} {
+	for _, check := range []struct {
+		at     time.Time
+		status string
+	}{{fixtureTime.Add(2 * time.Hour), "expired"}, {fixtureTime.Add(-2 * time.Minute), "not_yet_valid"}} {
 		report, err := pki.InspectCertificates(bytes.NewReader(f.leafPEM), check.at)
 		if err != nil || report.Certificates[0].Validity != check.status {
 			t.Error("inspection confused temporal validity with chain trust")
@@ -122,11 +125,15 @@ func TestVerificationUsesOnlyExplicitTrustNameUsageAndTime(t *testing.T) {
 		}
 	}
 	wrongRoot := newCertificateFixture(t, "ecdsa")
-	for _, test := range []struct{ name, usage, reason string; at time.Time; roots, intermediates []byte }{
+	for _, test := range []struct {
+		name, usage, reason  string
+		at                   time.Time
+		roots, intermediates []byte
+	}{
 		{"wrong.example.test", "server-auth", "name_mismatch", fixtureTime, f.rootPEM, f.intermediatePEM},
 		{"app.example.test", "client-auth", "incompatible_usage", fixtureTime, f.rootPEM, f.intermediatePEM},
-		{"app.example.test", "server-auth", "expired", fixtureTime.Add(2*time.Hour), f.rootPEM, f.intermediatePEM},
-		{"app.example.test", "server-auth", "not_yet_valid", fixtureTime.Add(-2*time.Minute), f.rootPEM, f.intermediatePEM},
+		{"app.example.test", "server-auth", "expired", fixtureTime.Add(2 * time.Hour), f.rootPEM, f.intermediatePEM},
+		{"app.example.test", "server-auth", "not_yet_valid", fixtureTime.Add(-2 * time.Minute), f.rootPEM, f.intermediatePEM},
 		{"app.example.test", "server-auth", "unknown_authority", fixtureTime, wrongRoot.rootPEM, f.intermediatePEM},
 		{"app.example.test", "server-auth", "unknown_authority", fixtureTime, f.rootPEM, nil},
 	} {

@@ -20,7 +20,7 @@ import (
 
 type fuzzPKIInputs struct {
 	root, leaf, key, csr []byte
-	privateEncodings    [][]byte
+	privateEncodings     [][]byte
 }
 
 // Ed25519 keeps the seed corpus inexpensive: no prime generation or repeated

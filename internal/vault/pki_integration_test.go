@@ -29,12 +29,12 @@ import (
 )
 
 type pkiIntegrationFixture struct {
-	admin *api.Client
+	admin  *api.Client
 	client *vault.Client
-	mount string
-	token string
+	mount  string
+	token  string
 	denied string
-	roots []byte
+	roots  []byte
 }
 
 func preparePKIIntegration(t *testing.T) pkiIntegrationFixture {
@@ -119,7 +119,7 @@ func pkiIntegrationTLS(t *testing.T, identity, roots []byte) {
 	defer server.Close()
 	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "app.fixture.test", MinVersion: tls.VersionTLS12}}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 5*time.Second}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 	response, err := client.Get(server.URL)
 	if err != nil {
 		t.Fatal("a native TLS handshake could not trust the issued certificate with its explicit root and SAN")
@@ -131,7 +131,7 @@ func pkiIntegrationTLS(t *testing.T, identity, roots []byte) {
 	}
 	wrongTransport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "wrong.fixture.test", MinVersion: tls.VersionTLS12}}
 	defer wrongTransport.CloseIdleConnections()
-	wrong := &http.Client{Transport: wrongTransport, Timeout: 5*time.Second}
+	wrong := &http.Client{Transport: wrongTransport, Timeout: 5 * time.Second}
 	if response, err := wrong.Get(server.URL); err == nil {
 		_ = response.Body.Close()
 		t.Error("native TLS accepted a hostname outside the issued SAN")

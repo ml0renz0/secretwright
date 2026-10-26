@@ -40,6 +40,8 @@ Template commands remain offline, ignore the session's KV cwd and credentials,
 and stay out of history. Rendered configuration is reviewed with blueprint.
 Lifecycle online actions use the fixed connection without a KV cwd; schema,
 example and validate remain offline. Every lifecycle action stays out of history.
+PKI certificate/key/CSR operations remain offline. PKI online actions use the
+fixed connection without a KV cwd; every PKI action stays out of history.
 `
 
 type shellOptions struct {
@@ -206,6 +208,13 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 		return append([]string(nil), words...)
 	}
 	position := 1
+	if words[0] == "pki" {
+		kind, action, depth := pkiCommandPrefix(words)
+		if depth == 0 || !pkiOnline(kind, action) {
+			return append([]string(nil), words...)
+		}
+		position = depth
+	}
 	if words[0] == "lifecycle" {
 		kind, action, depth := lifecycleCommandPrefix(words)
 		if depth == 0 || !lifecycleOnline(kind, action) {
@@ -237,7 +246,7 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	case "mounts", "ls", "cat", "cd", "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback",
 		"tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
 		kv = true
-	case "status", "auth", "policy", "approle", "token", "identity", "blueprint", "lifecycle":
+	case "status", "auth", "policy", "approle", "token", "identity", "blueprint", "lifecycle", "pki":
 	default:
 		return append([]string(nil), words...)
 	}
@@ -266,6 +275,8 @@ func shellOverrides(words []string) bool {
 	if _, _, depth := accessCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if _, _, depth := lifecycleCommandPrefix(words); depth != 0 {
+		start = depth
+	} else if _, _, depth := pkiCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if _, depth := blueprintCommandPrefix(words); depth != 0 {
 		start = depth

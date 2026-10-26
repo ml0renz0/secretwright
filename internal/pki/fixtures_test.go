@@ -21,8 +21,8 @@ import (
 var fixtureTime = time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 
 type certificateFixture struct {
-	root, intermediate, leaf *x509.Certificate
-	rootKey, intermediateKey, leafKey crypto.Signer
+	root, intermediate, leaf                          *x509.Certificate
+	rootKey, intermediateKey, leafKey                 crypto.Signer
 	rootPEM, intermediatePEM, leafPEM, keyPEM, csrPEM []byte
 }
 
@@ -87,14 +87,14 @@ func fixtureCSR(t *testing.T, key crypto.Signer, edit func(*x509.CertificateRequ
 
 func fixtureLeafTemplate() *x509.Certificate {
 	return &x509.Certificate{
-		SerialNumber: big.NewInt(0x01ab),
-		Subject: pkix.Name{CommonName: "app.example.test"},
-		DNSNames: []string{"app.example.test"},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
-		NotBefore: fixtureTime.Add(-time.Minute),
-		NotAfter: fixtureTime.Add(time.Hour),
-		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		SerialNumber:          big.NewInt(0x01ab),
+		Subject:               pkix.Name{CommonName: "app.example.test"},
+		DNSNames:              []string{"app.example.test"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		NotBefore:             fixtureTime.Add(-time.Minute),
+		NotAfter:              fixtureTime.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
 }
@@ -102,9 +102,9 @@ func fixtureLeafTemplate() *x509.Certificate {
 func newCertificateFixture(t *testing.T, kind string) certificateFixture {
 	t.Helper()
 	f := certificateFixture{rootKey: fixtureKey(t, "ecdsa"), intermediateKey: fixtureKey(t, "ecdsa"), leafKey: fixtureKey(t, kind)}
-	root := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Fixture Root"}, NotBefore: fixtureTime.Add(-time.Hour), NotAfter: fixtureTime.Add(365*24*time.Hour), BasicConstraintsValid: true, IsCA: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign, MaxPathLen: 1}
+	root := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Fixture Root"}, NotBefore: fixtureTime.Add(-time.Hour), NotAfter: fixtureTime.Add(365 * 24 * time.Hour), BasicConstraintsValid: true, IsCA: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign, MaxPathLen: 1}
 	f.root, f.rootPEM = fixtureCertificate(t, root, root, f.rootKey.Public(), f.rootKey)
-	intermediate := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "Fixture Intermediate"}, NotBefore: fixtureTime.Add(-time.Hour), NotAfter: fixtureTime.Add(30*24*time.Hour), BasicConstraintsValid: true, IsCA: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign, MaxPathLen: 0, MaxPathLenZero: true}
+	intermediate := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "Fixture Intermediate"}, NotBefore: fixtureTime.Add(-time.Hour), NotAfter: fixtureTime.Add(30 * 24 * time.Hour), BasicConstraintsValid: true, IsCA: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign, MaxPathLen: 0, MaxPathLenZero: true}
 	f.intermediate, f.intermediatePEM = fixtureCertificate(t, intermediate, f.root, f.intermediateKey.Public(), f.rootKey)
 	f.leaf, f.leafPEM = fixtureCertificate(t, fixtureLeafTemplate(), f.intermediate, f.leafKey.Public(), f.intermediateKey)
 	f.keyPEM = fixturePrivateKey(t, f.leafKey)

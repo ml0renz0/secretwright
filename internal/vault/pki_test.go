@@ -32,15 +32,15 @@ const f11Mount = "team/pki"
 const f11Serial = "01:23:45"
 
 type f11PKIFixture struct {
-	root       *x509.Certificate
-	rootKey    *ecdsa.PrivateKey
-	leaf       *x509.Certificate
-	leafKey    *ecdsa.PrivateKey
-	rootPEM    []byte
-	leafPEM    []byte
-	keyPEM     []byte
-	csrPEM     []byte
-	spec       pki.Spec
+	root    *x509.Certificate
+	rootKey *ecdsa.PrivateKey
+	leaf    *x509.Certificate
+	leafKey *ecdsa.PrivateKey
+	rootPEM []byte
+	leafPEM []byte
+	keyPEM  []byte
+	csrPEM  []byte
+	spec    pki.Spec
 }
 
 func f11NewKey(t *testing.T) *ecdsa.PrivateKey {
@@ -307,11 +307,15 @@ func TestPKIEmissionRejectsWrongSuccessfulResponsesAsUnconfirmedWithoutCompensat
 		edit func(map[string]any)
 	}{
 		{"missing key", false, func(data map[string]any) { delete(data, "private_key") }},
-		{"wrong key", false, func(data map[string]any) { data["private_key"] = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: wrongKeyDER})) }},
+		{"wrong key", false, func(data map[string]any) {
+			data["private_key"] = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: wrongKeyDER}))
+		}},
 		{"wrong expiration", false, func(data map[string]any) { data["expiration"] = f.leaf.NotAfter.Add(time.Hour).Unix() }},
 		{"wrong serial", false, func(data map[string]any) { data["serial_number"] = "01:02:03" }},
 		{"wrong SAN", false, func(data map[string]any) { data["certificate"] = string(wrongSAN) }},
-		{"untrusted chain", false, func(data map[string]any) { data["certificate"], data["issuing_ca"], data["ca_chain"] = string(otherRoot.leafPEM), string(otherRoot.rootPEM), []string{string(otherRoot.rootPEM)} }},
+		{"untrusted chain", false, func(data map[string]any) {
+			data["certificate"], data["issuing_ca"], data["ca_chain"] = string(otherRoot.leafPEM), string(otherRoot.rootPEM), []string{string(otherRoot.rootPEM)}
+		}},
 		{"CA instead of leaf", false, func(data map[string]any) { data["certificate"] = string(f.rootPEM) }},
 		{"malformed certificate", false, func(data map[string]any) { data["certificate"] = "private-f11-invalid-certificate" }},
 		{"key returned by signing", true, func(data map[string]any) { data["private_key"] = string(f.keyPEM) }},
@@ -367,7 +371,8 @@ func TestPKIRevocationBindsTheExactStoredFingerprintBeforeItsSingleMutation(t *t
 			w.WriteHeader(http.StatusNotFound)
 		}
 	})
-	report, err := client.RevokePKICertificate(context.Background(), f11Operator, f.leafPEM, vault.PKIOptions{Mount: f11Mount})
+	identity := append(append(append([]byte(nil), f.keyPEM...), f.leafPEM...), f.rootPEM...)
+	report, err := client.RevokePKICertificate(context.Background(), f11Operator, identity, vault.PKIOptions{Mount: f11Mount})
 	if err != nil || !report.Revoked || report.Serial != f11Serial || report.RevocationTime != revokedAt || reads.Load() < 1 || writes.Load() != 1 {
 		t.Fatal("exact certificate revocation was not bound and confirmed")
 	}

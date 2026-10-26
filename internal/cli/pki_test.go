@@ -56,7 +56,7 @@ func pkiCLICertificates(t *testing.T, expired bool) pkiCLIFixture {
 		t.Fatal("could not prepare native root key")
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	root := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Fixture Root"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24*time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
+	root := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Fixture Root"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
 	rootDER, err := x509.CreateCertificate(rand.Reader, root, root, &rootKey.PublicKey, rootKey)
 	if err != nil {
 		t.Fatal("could not prepare native root certificate")
@@ -157,7 +157,7 @@ func TestPKINativeInspectionVerificationAndKeyMatchingStayOffline(t *testing.T) 
 		pkiCLISafe(t, output, diagnostics, string(f.key), string(f.cert), string(f.csr))
 		if args[2] == "verify" {
 			var report struct {
-				Valid bool `json:"valid"`
+				Valid             bool `json:"valid"`
 				RevocationChecked bool `json:"revocation_checked"`
 			}
 			if json.Unmarshal([]byte(output), &report) != nil || !report.Valid || report.RevocationChecked {
