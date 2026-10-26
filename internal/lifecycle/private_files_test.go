@@ -34,11 +34,11 @@ func TestConstructorCleanupRemovesOnlyItsOwnLockDespiteModeChanges(t *testing.T)
 			}
 			store.abortOpen()
 			if replacement {
-				body, err := os.ReadFile(path+".lock")
+				body, err := os.ReadFile(path + ".lock")
 				if err != nil || string(body) != "foreign-writer" {
 					t.Error("constructor cleanup removed another writer's inode")
 				}
-			} else if _, err := os.Lstat(path+".lock"); !errors.Is(err, os.ErrNotExist) {
+			} else if _, err := os.Lstat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
 				t.Error("constructor cleanup left its own chmodded lock")
 			}
 		})
@@ -56,11 +56,11 @@ func TestFinalLocalPreflightRejectsProofChangesBeforeCredentialLoading(t *testin
 			}
 			spec := Spec{
 				APIVersion: APIVersion,
-				Name: "payments-api",
-				Provider: ProviderSpec{Kind: "approle", AuthMount: "approle", Role: "payments-api"},
-				Consumer: ConsumerSpec{Kind: "token-file", Path: consumer},
-				Verify: VerifySpec{Kind: "kv-read", Mount: "secret", KVVersion: 2, Path: "/secret/payments/health"},
-				Policy: PolicySpec{RotateBelow: "5m", MinimumNewTTL: "10m"},
+				Name:       "payments-api",
+				Provider:   ProviderSpec{Kind: "approle", AuthMount: "approle", Role: "payments-api"},
+				Consumer:   ConsumerSpec{Kind: "token-file", Path: consumer},
+				Verify:     VerifySpec{Kind: "kv-read", Mount: "secret", KVVersion: 2, Path: "/secret/payments/health"},
+				Policy:     PolicySpec{RotateBelow: "5m", MinimumNewTTL: "10m"},
 			}
 			store, err := Open(spec, path, "", true)
 			if err != nil {
