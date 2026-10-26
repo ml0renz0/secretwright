@@ -6,8 +6,11 @@ umask 077
 cd "$(dirname "$0")/.."
 
 vault_image="${VAULT_TEST_IMAGE:-hashicorp/vault:2.2.0}"
+database_image="${VAULT_TEST_DATABASE_IMAGE:-postgres:17-alpine}"
+require_database="${VAULT_TEST_REQUIRE_DATABASE:-0}"
 fixture_dir="$(mktemp -d)"
 container_id=""
+database_container_id=""
 vault_pid=""
 
 cleanup() {
@@ -15,6 +18,9 @@ cleanup() {
   trap - EXIT INT TERM
   if [[ -n "$container_id" ]]; then
     docker rm -f "$container_id" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$database_container_id" ]]; then
+    docker rm -f "$database_container_id" >/dev/null 2>&1 || true
   fi
   if [[ -n "$vault_pid" ]]; then
     kill "$vault_pid" >/dev/null 2>&1 || true
@@ -98,6 +104,57 @@ done
 if [[ "$ready" != true ]]; then
   echo 'The Vault fixture did not become ready within 60 attempts.' >&2
   exit 1
+fi
+
+# F10 positive lease coverage uses a private, disposable database. The password
+# is generated locally, passed through the Docker environment and Vault JSON
+# request body, and never printed or placed in process arguments.
+export VAULT_TEST_REQUIRE_DATABASE="$require_database"
+if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+  export VAULT_TEST_DATABASE_PASSWORD_FILE="$fixture_dir/database-password"
+  python3 - "$VAULT_TEST_DATABASE_PASSWORD_FILE" <<'PY_DATABASE'
+import os
+import secrets
+import sys
+
+descriptor = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(descriptor, 'w') as password_file:
+    password_file.write(secrets.token_hex(32))
+PY_DATABASE
+  database_password="$(cat "$VAULT_TEST_DATABASE_PASSWORD_FILE")"
+  database_container_id="$(POSTGRES_PASSWORD="$database_password" docker run --detach --rm \
+    --env POSTGRES_PASSWORD --env POSTGRES_USER=secretwright_fixture \
+    --env POSTGRES_DB=secretwright --publish 127.0.0.1::5432 \
+    "$database_image")"
+  unset database_password
+  export VAULT_TEST_DATABASE_CONTAINER="$database_container_id"
+  database_ready=false
+  for attempt in {1..60}; do
+    if docker exec "$database_container_id" pg_isready --quiet --host 127.0.0.1 \
+      --username secretwright_fixture --dbname secretwright >/dev/null 2>&1; then
+      database_ready=true
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ "$database_ready" != true ]]; then
+    echo 'The disposable PostgreSQL fixture did not become ready; private logs are withheld.' >&2
+    exit 1
+  fi
+  if [[ -n "$container_id" ]]; then
+    # Both fixtures use Docker's default bridge. Vault's own loopback would
+    # refer to its container, so the plugin needs the private database IP.
+    database_host="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$database_container_id")"
+    export VAULT_TEST_DATABASE_ADDRESS="${database_host}:5432"
+  else
+    export VAULT_TEST_DATABASE_ADDRESS="$(docker port "$database_container_id" 5432/tcp)"
+  fi
+  echo "Started ephemeral PostgreSQL container ($database_image)."
+elif [[ "$require_database" == 1 ]]; then
+  echo 'Full integration coverage requires Docker for the disposable PostgreSQL fixture.' >&2
+  exit 1
+else
+  echo 'Docker unavailable: local database lease integration checks will be explicitly skipped.'
 fi
 
 # Route this loopback fixture directly without changing outbound proxy settings.
@@ -535,3 +592,5 @@ python3 ./scripts/blueprint_smoke.py ./bin/secretwright "$fixture_dir"
 python3 ./scripts/template_smoke.py ./bin/secretwright "$fixture_dir"
 
 python3 ./scripts/reconcile_smoke.py ./bin/secretwright "$fixture_dir"
+
+python3 ./scripts/lifecycle_smoke.py ./bin/secretwright "$fixture_dir"

@@ -1,0 +1,17 @@
+api_version: secretwright/lifecycle/v1
+name: payments-api
+provider:
+  kind: approle
+  auth_mount: approle
+  role: payments-api
+consumer:
+  kind: token-file
+  path: /run/payments/vault-token
+verify:
+  kind: kv-read
+  mount: lifecycle-demo
+  kv_version: 2
+  path: /lifecycle-demo/payments/health
+policy:
+  rotate_below: 5m
+  minimum_new_ttl: 10m

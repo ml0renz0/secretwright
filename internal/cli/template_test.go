@@ -60,12 +60,12 @@ func TestTemplateCatalogExamplesAndRenderingIgnoreCredentialsAndNetwork(t *testi
 		t.Fatal("template catalog lost one of its six architecture patterns or stable order")
 	}
 	for _, name := range names {
-		code, example, diagnostics := runWriteCLI(f03PanicReader{}, "template", "show", name)
+		code, example, diagnostics := runWriteCLI(f03PanicReader{}, "template", "show", "--format", "json", name)
 		var manifest map[string]any
 		if code != 0 || diagnostics != "" || json.Unmarshal([]byte(example), &manifest) != nil || manifest["api_version"] != "secretwright/architecture/v1" {
 			t.Fatal("template show did not produce an offline editable manifest")
 		}
-		code, rendered, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--file", templateCLIInput(t, example))
+		code, rendered, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--format", "json", "--file", templateCLIInput(t, example))
 		document, err := blueprint.Load(strings.NewReader(rendered), nil)
 		if code != 0 || diagnostics != "" || err != nil || len(document.Resources) == 0 || strings.Contains(rendered, "private-") {
 			t.Error("catalog example did not render a complete usable blueprint offline")
@@ -75,6 +75,43 @@ func TestTemplateCatalogExamplesAndRenderingIgnoreCredentialsAndNetwork(t *testi
 	var schema map[string]any
 	if code != 0 || diagnostics != "" || json.Unmarshal([]byte(output), &schema) != nil || schema["$id"] != "urn:secretwright:architecture:v1" {
 		t.Error("architecture schema was not available offline")
+	}
+}
+
+func TestTemplateShowAndRenderDefaultToYAMLWithEquivalentExplicitJSON(t *testing.T) {
+	cleanEnvironment(t)
+	t.Setenv("VAULT_ADDR", "private-invalid-address")
+	t.Setenv("VAULT_CACERT", "/private-missing-ca")
+	for _, pattern := range []string{"multi-app", "multi-env", "multi-user", "saas", "single-app", "single-user"} {
+		code, exampleYAML, diagnostics := runWriteCLI(f03PanicReader{}, "template", "show", pattern)
+		yamlExample, yamlErr := blueprint.DecodeConfiguration(strings.NewReader(exampleYAML))
+		if code != 0 || diagnostics != "" || json.Valid([]byte(exampleYAML)) || yamlErr != nil || yamlExample["api_version"] != "secretwright/architecture/v1" || !strings.HasSuffix(exampleYAML, "\n") {
+			t.Fatal("template show did not default to a complete editable YAML manifest offline")
+		}
+		code, exampleJSON, diagnostics := runWriteCLI(f03PanicReader{}, "template", "show", "--format", "json", pattern)
+		jsonExample, jsonErr := blueprint.DecodeConfiguration(strings.NewReader(exampleJSON))
+		if code != 0 || diagnostics != "" || !json.Valid([]byte(exampleJSON)) || jsonErr != nil || !reflect.DeepEqual(yamlExample, jsonExample) {
+			t.Fatal("explicit JSON changed the default YAML manifest contents")
+		}
+		code, explicitYAML, diagnostics := runWriteCLI(f03PanicReader{}, "template", "show", "--format", "yaml", pattern)
+		if code != 0 || diagnostics != "" || explicitYAML != exampleYAML {
+			t.Error("explicit YAML did not match the default output")
+		}
+		input := templateCLIInput(t, exampleYAML)
+		code, renderedYAML, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--file", input)
+		yamlBlueprint, yamlErr := blueprint.Load(strings.NewReader(renderedYAML), nil)
+		if code != 0 || diagnostics != "" || json.Valid([]byte(renderedYAML)) || yamlErr != nil || len(yamlBlueprint.Resources) == 0 || !strings.HasSuffix(renderedYAML, "\n") {
+			t.Fatal("default YAML manifest did not render a complete usable YAML blueprint")
+		}
+		code, renderedJSON, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--format", "json", "--file", input)
+		jsonBlueprint, jsonErr := blueprint.Load(strings.NewReader(renderedJSON), nil)
+		if code != 0 || diagnostics != "" || !json.Valid([]byte(renderedJSON)) || jsonErr != nil || !reflect.DeepEqual(yamlBlueprint, jsonBlueprint) {
+			t.Error("explicit JSON changed resource dependencies, policy contents, or typed blueprint specifications")
+		}
+		code, repeated, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--file", input)
+		if code != 0 || diagnostics != "" || repeated != renderedYAML {
+			t.Error("identical architecture input produced unstable default YAML")
+		}
 	}
 }
 
@@ -111,6 +148,10 @@ func TestTemplateRejectsUnusedOptionsAndInvalidFilesWithoutAnyHTTP(t *testing.T)
 		{"template", "delete"}, {"template", "show"}, {"template", "show", "private-unknown-template"},
 		{"template", "show", "single-app", "extra"}, {"template", "list", "extra"},
 		{"template", "schema", "--file", valid}, {"template", "list", "--address", server.URL},
+		{"template", "list", "--format", "yaml"}, {"template", "schema", "--format", "json"},
+		{"template", "show", "--format", "private-invalid-format", "single-app"},
+		{"template", "show", "single-app", "--format", "json"},
+		{"template", "render", "--format", "private-invalid-format", "--file", missing},
 		{"template", "show", "--token-file", missing, "single-app"},
 		{"template", "render"}, {"template", "render", "--file", "-"},
 		{"template", "render", "--file", ""}, {"template", "render", "--file", valid, "extra"},
@@ -133,11 +174,11 @@ func TestTemplateRejectsUnusedOptionsAndInvalidFilesWithoutAnyHTTP(t *testing.T)
 func TestTemplateRenderKeepsTheBlueprintSpecsAndDeterministicOutput(t *testing.T) {
 	cleanEnvironment(t)
 	name := templateCLIInput(t, templateCLIManifest)
-	code, first, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--file", name)
+	code, first, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--format", "json", "--file", name)
 	if code != 0 || diagnostics != "" || !strings.HasSuffix(first, "\n") {
 		t.Fatal("template render did not emit a complete JSON document")
 	}
-	code, second, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--file", name)
+	code, second, diagnostics := runWriteCLI(f03PanicReader{}, "template", "render", "--format", "json", "--file", name)
 	if code != 0 || diagnostics != "" || first != second {
 		t.Error("identical template input changed its rendered bytes")
 	}
@@ -157,6 +198,8 @@ func TestTemplateCommandsRejectOutputFailuresAndShortWrites(t *testing.T) {
 	for _, args := range [][]string{
 		{"template", "list"}, {"template", "show", "single-app"},
 		{"template", "schema"}, {"template", "render", "--file", name},
+		{"template", "show", "--format", "json", "single-app"},
+		{"template", "render", "--format", "json", "--file", name},
 	} {
 		for _, writer := range []io.Writer{failedWriter{}, blueprintShortWriter{}} {
 			var diagnostics bytes.Buffer
@@ -173,7 +216,7 @@ func TestShellTemplateCommandsRemainOfflineAndOutsideHistory(t *testing.T) {
 	t.Setenv("VAULT_ADDR", "private-invalid-address")
 	t.Setenv("VAULT_CACERT", "/private-missing-ca")
 	name := templateCLIInput(t, templateCLIManifest)
-	commands := "template list\ntemplate show single-app\ntemplate schema\ntemplate render --file " + name + "\nhistory\n"
+	commands := "template list\ntemplate show --format json single-app\ntemplate schema\ntemplate render --format json --file " + name + "\nhistory\n"
 	code, output, diagnostics := runShellCLI(strings.NewReader(commands), "shell", "--no-prompt", "--address", "private-invalid-startup-address", "--token-file", "/private-unreadable-token", "--cwd", "/unused-kv-cwd")
 	values := decodeShellOutputs(t, output)
 	if code != 0 || diagnostics != "" || len(values) != 5 || !reflect.DeepEqual(values[4], []any{}) {
