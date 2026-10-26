@@ -55,6 +55,9 @@ jobs:
           - target: logical-paths
             package: ./internal/vault
             function: FuzzResolvePath
+          - target: x509-pem
+            package: ./internal/pki
+            function: FuzzInspectPEM
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

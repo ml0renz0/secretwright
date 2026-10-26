@@ -48,6 +48,7 @@ Usage:
   secretwright blueprint schema|validate|plan|apply|adopt|recover  Manage declarative resources
   secretwright template list|show|schema|render  Render architecture blueprints offline
   secretwright lifecycle ACTION    Inspect TTLs and rotate application credentials
+  secretwright pki ACTION          Inspect X.509 files and manage Vault certificates
 
 Network options (after the command, before a path):
   --address URL           Override VAULT_ADDR and VAULT_AGENT_ADDR
@@ -167,6 +168,8 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		return templateCommand(args, stdout, stderr)
 	case "lifecycle":
 		return lifecycleCommand(ctx, args, stdout, stderr)
+	case "pki":
+		return pkiCommand(ctx, args, stdout, stderr)
 	case "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback":
 		return kvWriteCommand(ctx, args[0], args[1:], stdin, stdout, stderr)
 	case "auth":

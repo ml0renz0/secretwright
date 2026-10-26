@@ -3,6 +3,12 @@ package schemas
 
 import _ "embed"
 
+//go:embed pki-v1.schema.json
+var pkiV1 []byte
+
+// PKIV1 returns a detached copy of the native certificate request schema.
+func PKIV1() []byte { return append([]byte(nil), pkiV1...) }
+
 //go:embed blueprint-v1.schema.json
 var blueprintV1 []byte
 

@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F09 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, blueprints, templates y reconciliación con inventario privado. **F10 está implementada en la [PR #12](https://github.com/ml0renz0/secretwright/pull/12), pendiente de merge**: rotación AppRole hacia archivos privados y gestión de TTL y leases, según su [contrato](docs/features/F10-lifecycle-rotation.md).
+**F00–F10 están integradas**: conexión, KV v1/v2, shell, operaciones recursivas, backup/restore, accesos e identidades, blueprints, templates, reconciliación, rotación AppRole y gestión de TTL y leases. **F11 está implementada en la [PR #13](https://github.com/ml0renz0/secretwright/pull/13), pendiente de merge**, según su [contrato X.509 y PKI](docs/features/F11-x509-pki.md): inspección criptográfica local y certificados mediante roles PKI existentes en Vault.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -175,6 +175,22 @@ El inventario privado `0600` contiene metadatos y hashes, sin HCL, specs ni cred
 La configuración selecciona un AppRole existente, un archivo consumidor privado y una lectura KV v2 para verificar la candidata. Rotate emite y prueba la nueva credencial antes de publicar el archivo atómicamente. La anterior sigue viva hasta retire con confirmación externa. Los recibos guardan metadatos; los secretos de recuperación quedan en artefactos separados `0600`. Recover reconoce checkpoints sin repetir emisión, login, publicación ni revocación.
 
 `lifecycle token inspect|renew` consulta y renueva tokens privados; `lifecycle lease inspect|renew|revoke` gestiona un lease exacto leído de un archivo privado YAML o JSON. Los informes muestran el TTL real concedido. Los comandos son puntuales, aptos para cron o timers externos; no existe un daemon. El [laboratorio de rotación](examples/lifecycle/README.md) y el [contrato F10](docs/features/F10-lifecycle-rotation.md) describen preparación, recuperación y límites.
+
+## Certificados X.509 y PKI
+
+```bash
+./bin/secretwright pki example > request.yaml
+./bin/secretwright pki validate --file request.yaml
+./bin/secretwright pki csr create --file request.yaml --out web.csr --key-out web.key
+./bin/secretwright pki sign --mount pki --role web --file request.yaml \
+  --csr web.csr --ca-file roots.pem --out web.pem --token-file operator-token
+./bin/secretwright pki cert verify --file web.pem --ca-file roots.pem --hostname app.example.test
+./bin/secretwright pki cert match --file web.pem --key web.key
+```
+
+Los comandos offline inspeccionan certificados, claves y CSR y verifican cadena, tiempo, SAN, usos y correspondencia de clave con las bibliotecas de Go. No necesitan OpenSSL ni acceso a Vault. Las raíces de confianza son explícitas; la verificación local no descarga certificados ni comprueba revocación automáticamente.
+
+Los comandos online leen CA/certificados, emiten una identidad PEM privada, firman una CSR sin enviar su clave y revocan un certificado exacto tras comparar su huella. Requieren un montaje y rol PKI existentes. Las peticiones generadas usan YAML por defecto, con JSON opcional; certificados y claves mantienen PEM. Los [ejemplos](examples/pki/README.md) y el [contrato F11](docs/features/F11-x509-pki.md) explican archivos privados y resultados parciales.
 
 ## Comprobar autenticación
 
@@ -355,6 +371,7 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F08](docs/features/F08-architecture-templates.md)
 - [Contrato de F09](docs/features/F09-reconciliation-drift.md)
 - [Contrato de F10](docs/features/F10-lifecycle-rotation.md)
+- [Contrato de F11](docs/features/F11-x509-pki.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 

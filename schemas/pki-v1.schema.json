@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:secretwright:pki:v1",
+  "title": "Secretwright PKI request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "name", "ttl"],
+  "anyOf": [{"required": ["dns_names"], "properties": {"dns_names": {"minItems": 1}}}, {"required": ["ip_addresses"], "properties": {"ip_addresses": {"minItems": 1}}}],
+  "properties": {
+    "api_version": {"const": "secretwright/pki/v1"},
+    "name": {"type": "string", "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$"},
+    "common_name": {"type": "string", "maxLength": 253},
+    "dns_names": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 253}},
+    "ip_addresses": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 45}},
+    "ttl": {"type": "string", "minLength": 2, "maxLength": 64},
+    "usage": {"enum": ["server-auth", "client-auth"]},
+    "key": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"type": {"enum": ["ecdsa", "rsa", "ed25519"]}, "bits": {"type": "integer", "minimum": 0, "maximum": 4096}}
+    }
+  }
+}
