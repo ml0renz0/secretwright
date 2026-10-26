@@ -33,7 +33,7 @@ func TestCompletionUsesCommandNamesWithoutConsultingVault(t *testing.T) {
 		line string
 		want []string
 	}{
-		{line: "p", want: []string{"olicy ", "ut ", "wd "}},
+		{line: "p", want: []string{"ki ", "olicy ", "ut ", "wd "}},
 		{line: "ap", want: []string{"prole "}},
 		{line: "blu", want: []string{"eprint "}},
 		{line: "ident", want: []string{"ity "}},
