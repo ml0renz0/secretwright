@@ -21,6 +21,19 @@ func ValidateIssued(spec Spec, certificate, chain, key, csr, roots []byte, now t
 		return CertificateInfo{}, ErrInvalidInput
 	}
 	leaf := document.certificates[0]
+	commonNames := 0
+	for _, name := range leaf.Subject.Names {
+		if name.Type.String() == "2.5.4.3" {
+			value, ok := name.Value.(string)
+			if !ok || value != spec.CommonName || value == "" {
+				return CertificateInfo{}, ErrInvalidInput
+			}
+			commonNames++
+		}
+	}
+	if commonNames > 1 || spec.CommonName != "" && commonNames != 1 {
+		return CertificateInfo{}, ErrInvalidInput
+	}
 	if leaf.IsCA || !sameIdentity(spec, leaf.Subject.CommonName, leaf.DNSNames, leaf.IPAddresses) || len(leaf.EmailAddresses) != 0 || len(leaf.URIs) != 0 || leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 || leaf.KeyUsage&(x509.KeyUsageCertSign|x509.KeyUsageCRLSign) != 0 {
 		return CertificateInfo{}, ErrInvalidInput
 	}

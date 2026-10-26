@@ -53,10 +53,19 @@ func ValidateCSR(spec Spec, body []byte) (CSRReport, error) {
 		return CSRReport{}, ErrInvalidInput
 	}
 	commonNameOID := asn1.ObjectIdentifier{2, 5, 4, 3}
+	commonNames := 0
 	for _, name := range request.Subject.Names {
 		if !name.Type.Equal(commonNameOID) {
 			return CSRReport{}, ErrInvalidInput
 		}
+		value, ok := name.Value.(string)
+		if !ok || value != spec.CommonName || value == "" {
+			return CSRReport{}, ErrInvalidInput
+		}
+		commonNames++
+	}
+	if commonNames > 1 || spec.CommonName != "" && commonNames != 1 {
+		return CSRReport{}, ErrInvalidInput
 	}
 	sanOID := asn1.ObjectIdentifier{2, 5, 29, 17}
 	for _, extension := range request.Extensions {

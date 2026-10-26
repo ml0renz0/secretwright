@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ml0renz0/secretwright/internal/blueprint"
+	"github.com/ml0renz0/secretwright/internal/configuration"
 )
 
 var resourceName = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
@@ -138,7 +138,7 @@ func ValidateSpec(spec Spec) (Spec, error) {
 }
 
 func Load(input io.Reader) (Spec, error) {
-	object, err := blueprint.DecodeConfiguration(input)
+	object, err := configuration.DecodeObject(input)
 	if err != nil || validateSchema(object) != nil {
 		return Spec{}, ErrInvalidInput
 	}

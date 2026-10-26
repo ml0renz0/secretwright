@@ -84,7 +84,10 @@ func certificateInfo(certificate *x509.Certificate, now time.Time) (CertificateI
 		validity = "expired"
 	}
 	usages := make([]string, 0)
-	for _, usage := range []struct{ bit x509.KeyUsage; name string }{{x509.KeyUsageDigitalSignature, "digital-signature"}, {x509.KeyUsageKeyEncipherment, "key-encipherment"}, {x509.KeyUsageKeyAgreement, "key-agreement"}, {x509.KeyUsageCertSign, "cert-sign"}, {x509.KeyUsageCRLSign, "crl-sign"}} {
+	for _, usage := range []struct {
+		bit  x509.KeyUsage
+		name string
+	}{{x509.KeyUsageDigitalSignature, "digital-signature"}, {x509.KeyUsageKeyEncipherment, "key-encipherment"}, {x509.KeyUsageKeyAgreement, "key-agreement"}, {x509.KeyUsageCertSign, "cert-sign"}, {x509.KeyUsageCRLSign, "crl-sign"}} {
 		if certificate.KeyUsage&usage.bit != 0 {
 			usages = append(usages, usage.name)
 		}
@@ -99,7 +102,7 @@ func certificateInfo(certificate *x509.Certificate, now time.Time) (CertificateI
 			usages = append(usages, "any")
 		}
 	}
-	return CertificateInfo{Subject: certificate.Subject.String(), Issuer: certificate.Issuer.String(), Serial: serial, SHA256: fingerprint(certificate.Raw), PublicKeySHA256: key.PublicKeySHA256, DNSNames: dns, IPAddresses: ips, EmailAddresses: emails, URIs: uris, NotBefore: certificate.NotBefore.UTC(), NotAfter: certificate.NotAfter.UTC(), TTLSeconds: certificate.NotAfter.Unix()-now.Unix(), Validity: validity, IsCA: certificate.IsCA, Key: key, Usages: usages}, nil
+	return CertificateInfo{Subject: certificate.Subject.String(), Issuer: certificate.Issuer.String(), Serial: serial, SHA256: fingerprint(certificate.Raw), PublicKeySHA256: key.PublicKeySHA256, DNSNames: dns, IPAddresses: ips, EmailAddresses: emails, URIs: uris, NotBefore: certificate.NotBefore.UTC(), NotAfter: certificate.NotAfter.UTC(), TTLSeconds: certificate.NotAfter.Unix() - now.Unix(), Validity: validity, IsCA: certificate.IsCA, Key: key, Usages: usages}, nil
 }
 
 func InspectCertificates(input io.Reader, now time.Time) (CertificateReport, error) {

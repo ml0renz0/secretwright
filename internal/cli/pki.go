@@ -61,23 +61,23 @@ inspect the artifacts and Vault before explicitly retrying or revoking.
 var errPKIOutputConflict = errors.New("the PKI output must not already exist")
 
 type pkiCommandOptions struct {
-	kind string
-	action string
-	file string
-	caFile string
-	chain string
-	key string
-	csr string
-	output string
+	kind      string
+	action    string
+	file      string
+	caFile    string
+	chain     string
+	key       string
+	csr       string
+	output    string
 	keyOutput string
-	hostname string
-	usage string
-	mount string
-	role string
-	serial string
-	format fileformat.Format
-	force bool
-	network networkOptions
+	hostname  string
+	usage     string
+	mount     string
+	role      string
+	serial    string
+	format    fileformat.Format
+	force     bool
+	network   networkOptions
 }
 
 // Keep the shell's connection insertion and override scan aligned with parsing.
@@ -293,8 +293,8 @@ func pkiOfflineCommand(ctx context.Context, options pkiCommandOptions, stdout, s
 		}
 		if options.action == "validate" {
 			return writePKIJSON(stdout, stderr, struct {
-				Name string `json:"name"`
-				Valid bool `json:"valid"`
+				Name  string `json:"name"`
+				Valid bool   `json:"valid"`
 			}{Name: spec.Name, Valid: true}, false)
 		}
 		return pkiCreateCSR(ctx, options, spec, stdout, stderr)

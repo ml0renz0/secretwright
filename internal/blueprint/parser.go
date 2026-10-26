@@ -1,16 +1,12 @@
 package blueprint
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"io"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"gopkg.in/yaml.v3"
+	"github.com/ml0renz0/secretwright/internal/configuration"
 )
 
 var decimalInteger = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
@@ -70,93 +66,11 @@ func Load(input io.Reader, overrides io.Reader) (Document, error) {
 }
 
 func readDocument(input io.Reader) (any, error) {
-	if input == nil {
+	value, err := configuration.Decode(input)
+	if err != nil {
 		return nil, ErrInvalidBlueprint
 	}
-	body, err := io.ReadAll(io.LimitReader(input, MaxInputBytes+1))
-	if err != nil || len(body) > MaxInputBytes || !utf8.Valid(body) || bytes.IndexByte(body, 0) >= 0 {
-		return nil, ErrInvalidBlueprint
-	}
-	decoder := yaml.NewDecoder(bytes.NewReader(body))
-	var document yaml.Node
-	if err := decoder.Decode(&document); err != nil || document.Kind != yaml.DocumentNode || len(document.Content) != 1 {
-		return nil, ErrInvalidBlueprint
-	}
-	var extra yaml.Node
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, ErrInvalidBlueprint
-	}
-	count := 0
-	return yamlJSONValue(document.Content[0], 0, &count)
-}
-
-func yamlJSONValue(node *yaml.Node, depth int, count *int) (any, error) {
-	*count = *count + 1
-	if node == nil || depth > MaxDepth || *count > MaxNodes || node.Anchor != "" || node.Alias != nil || node.Kind == yaml.AliasNode {
-		return nil, ErrInvalidBlueprint
-	}
-	switch node.Kind {
-	case yaml.MappingNode:
-		if node.Tag != "!!map" || len(node.Content)%2 != 0 {
-			return nil, ErrInvalidBlueprint
-		}
-		result := make(map[string]any, len(node.Content)/2)
-		for index := 0; index < len(node.Content); index += 2 {
-			keyNode := node.Content[index]
-			*count = *count + 1
-			if *count > MaxNodes || keyNode.Kind != yaml.ScalarNode || keyNode.Tag != "!!str" || keyNode.Anchor != "" || keyNode.Alias != nil || !validString(keyNode.Value) {
-				return nil, ErrInvalidBlueprint
-			}
-			if _, duplicate := result[keyNode.Value]; duplicate {
-				return nil, ErrInvalidBlueprint
-			}
-			value, err := yamlJSONValue(node.Content[index+1], depth+1, count)
-			if err != nil {
-				return nil, ErrInvalidBlueprint
-			}
-			result[keyNode.Value] = value
-		}
-		return result, nil
-	case yaml.SequenceNode:
-		if node.Tag != "!!seq" {
-			return nil, ErrInvalidBlueprint
-		}
-		result := make([]any, 0, len(node.Content))
-		for _, child := range node.Content {
-			value, err := yamlJSONValue(child, depth+1, count)
-			if err != nil {
-				return nil, ErrInvalidBlueprint
-			}
-			result = append(result, value)
-		}
-		return result, nil
-	case yaml.ScalarNode:
-		switch node.Tag {
-		case "!!str":
-			if !validString(node.Value) {
-				return nil, ErrInvalidBlueprint
-			}
-			return node.Value, nil
-		case "!!int":
-			if !decimalInteger.MatchString(node.Value) {
-				return nil, ErrInvalidBlueprint
-			}
-			if _, err := strconv.ParseInt(node.Value, 10, 64); err != nil {
-				return nil, ErrInvalidBlueprint
-			}
-			return json.Number(node.Value), nil
-		case "!!bool":
-			switch node.Value {
-			case "true", "True", "TRUE":
-				return true, nil
-			case "false", "False", "FALSE":
-				return false, nil
-			}
-		case "!!null":
-			return nil, nil
-		}
-	}
-	return nil, ErrInvalidBlueprint
+	return value, nil
 }
 
 func validString(value string) bool {

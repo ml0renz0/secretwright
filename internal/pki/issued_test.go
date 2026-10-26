@@ -56,6 +56,12 @@ func TestIssuedCertificateMustMatchExplicitTrustRequestAndPossessedKey(t *testin
 		edit func(*x509.Certificate)
 	}{
 		{"wrong CN", func(c *x509.Certificate) { c.Subject.CommonName = "foreign.example.test" }},
+		{"multiple CN", func(c *x509.Certificate) {
+			c.Subject.ExtraNames = []pkix.AttributeTypeAndValue{
+				{Type: asn1.ObjectIdentifier{2, 5, 4, 3}, Value: "foreign.example.test"},
+				{Type: asn1.ObjectIdentifier{2, 5, 4, 3}, Value: "app.example.test"},
+			}
+		}},
 		{"extra DNS", func(c *x509.Certificate) { c.DNSNames = append(c.DNSNames, "foreign.example.test") }},
 		{"missing DNS", func(c *x509.Certificate) { c.DNSNames = nil }},
 		{"extra IP", func(c *x509.Certificate) { c.IPAddresses = append(c.IPAddresses, net.ParseIP("127.0.0.2")) }},

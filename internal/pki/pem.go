@@ -23,8 +23,8 @@ const maxCertificates = 32
 
 type pemDocument struct {
 	certificates []*x509.Certificate
-	key crypto.Signer
-	request *x509.CertificateRequest
+	key          crypto.Signer
+	request      *x509.CertificateRequest
 }
 
 // Decode only the first complete block. pem.Decode otherwise searches past an
