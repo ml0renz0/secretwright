@@ -139,28 +139,42 @@ Si falla la carga de uno de los secretos, conserva los archivos de esa misma cla
 )
 ```
 
-### Publicar la primera candidata
+### Publicar candidatas al integrar cambios
 
-Después de configurar ambos secretos, integrar las notas de la candidata y revisar el commit de `main`, ejecuta desde un checkout limpio:
+El flujo normal parte de `.github/release.yaml`:
 
-```bash
-(
-  set -euo pipefail
-  export GH_HOST=github.com
-  git fetch origin main --tags
-  git switch --detach origin/main
-  secretwright_release_sha=$(git rev-parse HEAD)
-  secretwright_release_tag=v0.1.0-rc.1
-  git tag -a "$secretwright_release_tag" "$secretwright_release_sha" -m "Secretwright $secretwright_release_tag"
-  python3 scripts/release_preflight.py --tag "$secretwright_release_tag" \
-    --sha "$secretwright_release_sha" --main-ref origin/main
-  git push origin "refs/tags/$secretwright_release_tag"
-  gh run list --repo ml0renz0/secretwright --workflow Release --limit 5
-)
+```yaml
+next_version: 0.1.0
+promote_candidate: null
 ```
 
-El tag activa una ejecución nueva que genera los artefactos de `0.1.0-rc.1`. La candidata usa `prerelease` y no se marca como latest. Comprueba la firma con la clave pública conservada antes y los dieciocho assets de la release.
+Configura ambos secretos antes de integrar la preparación en `main`. Cada merge que mantiene la promoción sin cambios activa `Release`: selecciona el commit integrado, ejecuta la CI completa y genera `v0.1.0-rc.N`. `N` es `GITHUB_RUN_NUMBER` del workflow, por lo que puede haber saltos y la primera publicación no tiene por qué terminar en `rc.1`.
 
-El flujo exige un tag SemVer que apunte a un commit del historial de `main`, ejecuta la CI completa y publica únicamente después de verificar el bundle y su firma. No sobrescribe releases existentes. Si una publicación se interrumpe, inspecciona el borrador y sus assets antes de decidir cómo continuar.
+El mismo flujo valida el bundle, comprueba la clave de firma fuera de línea y crea el tag y la release. La candidata aparece como prerelease y no se marca como latest. Comprueba los dieciocho assets y la firma con la clave pública conservada.
 
-Consulta el [contrato F13](features/F13-packaging-release.md) para los artefactos, controles y límites exactos.
+El workflow se activa con pushes a `main`; subir un tag manual no inicia una publicación. El coordinador ejecuta la CI y la publicación directamente y crea el tag al finalizar las comprobaciones. Así no depende de encadenar otro workflow desde un tag creado con `GITHUB_TOKEN`.
+
+### Liberar la estable mediante una PR
+
+Tras aceptar una candidata publicada, por ejemplo `v0.1.0-rc.4`, abre una PR que solo cambie `.github/release.yaml`:
+
+```yaml
+next_version: 0.1.1
+promote_candidate: v0.1.0-rc.4
+```
+
+El merge aprueba la promoción. CI/CD resuelve el commit de esa RC, comprueba que pertenece al historial de `main` y ejecuta de nuevo la suite completa sobre ese commit. Compila con la versión final `0.1.0`, firma los artefactos, crea `v0.1.0` y publica la estable. GitHub determina si pasa a ser latest mediante su política de fecha de creación y versión SemVer. Los cambios que hayan entrado después en `main` no se añaden a esa estable.
+
+La versión está incorporada al ejecutable: la estable usa el mismo código fuente que la RC seleccionada, pero sus artefactos se recompilan y tienen bytes y hashes distintos. No se renombran los paquetes de la candidata.
+
+Mantén `promote_candidate` sin cambios durante el desarrollo siguiente. Los merges posteriores producirán `v0.1.1-rc.N`. Para corregir una candidata, integra una PR normal en `main`, prueba la nueva RC y selecciona esa RC en la promoción. No se necesita una rama de release permanente.
+
+El fichero admite el subconjunto YAML documentado en el [contrato de releases](features/TBD-releases.md). La próxima versión no puede retroceder; al promover debe avanzar más allá de la estable seleccionada. Una PR de promoción contiene únicamente ese cambio de metadatos.
+
+### Si falla una publicación
+
+La ausencia de los secretos o una clave inválida detienen la publicación antes de crear el tag remoto o la release. Tras completar la configuración, puedes volver a ejecutar el mismo run fallido para conservar su número de RC.
+
+El flujo no sobrescribe tags ni releases existentes. Una interrupción después de crear el tag o el borrador requiere inspeccionar el estado remoto y sus assets antes de continuar; no hay borrado, rollback ni reintento automático que los sustituya. Una RC válida sigue disponible aunque falle su promoción.
+
+Consulta el [contrato F13](features/F13-packaging-release.md) para los artefactos y sus límites, y el [contrato de releases TBD](features/TBD-releases.md) para la planificación y promoción.

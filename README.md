@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F13 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases, certificados X.509/PKI, keytabs y distribución firmada. La primera candidata `v0.1.0-rc.1` está en preparación: [notas y alcance](docs/releases/v0.1.0-rc.1.md), [configuración y publicación](docs/distribution.md).
+**F00–F13 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases, certificados X.509/PKI, keytabs y distribución firmada. La primera candidata de `0.1.0` está en preparación: [notas y alcance](docs/releases/v0.1.0-rc.1.md). El [flujo de releases](docs/features/TBD-releases.md) genera una RC al integrar cambios en `main` y publica la estable al integrar una PR de promoción. La [guía de distribución](docs/distribution.md) explica la configuración inicial de firma.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -391,6 +391,7 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F12](docs/features/F12-kerberos-keytab.md)
 - [Contrato de F13](docs/features/F13-packaging-release.md)
 - [Instalación y verificación de releases](docs/distribution.md)
+- [RC y estables desde CI/CD](docs/features/TBD-releases.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 

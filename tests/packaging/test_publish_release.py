@@ -45,6 +45,10 @@ def reply(status, body, success=None):
     sys.exit((0 if status == 200 else 1) if success is None else success)
 if args[0] == 'api':
     endpoint = args[-1]
+    if '/releases/' in endpoint and '--method' in args and args[args.index('--method') + 1] == 'PATCH':
+        state['published'] = True
+        state['latest_policy'] = args[args.index('make_latest=legacy')] if 'make_latest=legacy' in args else None
+        save(); print(json.dumps({'id': 123, 'tag_name': state['tag'], 'draft': False, 'prerelease': False, 'assets': state['uploaded']})); sys.exit(0)
     if '/git/refs' in endpoint and '--method' in args and args[args.index('--method') + 1] == 'POST':
         if state.get('tag_create_error'):
             save(); print('private-f13-upstream-error', file=sys.stderr); sys.exit(1)
@@ -89,7 +93,7 @@ if args[0] == 'api':
         if error == 'extra': assets.append({'name': 'unexpected.txt', 'size': 1, 'digest': 'sha256:' + '0'*64, 'state': 'uploaded'})
         if error == 'missing': assets.pop()
         if error == 'duplicate': assets[-1] = dict(assets[0])
-        reply(200, {'tag_name': state['tag'] if error != 'tag' else 'v9.9.9', 'draft': error != 'not-draft',
+        reply(200, {'id': state.get('release_id', 123), 'tag_name': state['tag'] if error != 'tag' else 'v9.9.9', 'draft': error != 'not-draft',
                     'prerelease': state.get('prerelease', False), 'assets': assets})
 if args[:2] == ['release', 'create']:
     paths = [Path(arg) for arg in args[2:] if arg.startswith('/') and Path(arg).is_file()]
@@ -361,8 +365,10 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertNotIn('sha=' + self.planned['control_sha'], post)
         self.assertEqual(self.state['candidate_tag_checks'], 2)
         self.assertEqual(self.state['candidate_release_checks'], 2)
-        edit = next(call['args'] for call in self.state['calls'] if call['args'][:2] == ['release', 'edit'])
-        self.assertIn('--latest', edit)
+        edit = next(call['args'] for call in self.state['calls'] if 'PATCH' in call['args'])
+        self.assertIn('draft=false', edit)
+        self.assertIn('make_latest=legacy', edit)
+        self.assertEqual(self.state['latest_policy'], 'make_latest=legacy')
 
     def test_planned_release_checks_context_shape_source_and_number_before_network(self):
         original = dict(self.automatic_plan())
@@ -423,6 +429,51 @@ class ReleasePublicationTests(unittest.TestCase):
                 self.state = dict(original, **{field: value})
                 self.rejected(created=True)
                 self.assertTrue(self.state['tag_created'])
+
+
+
+    def test_planned_tag_head_and_control_history_must_match_approved_source(self):
+        self.automatic_plan()
+        self.git('tag', self.planned['tag'])
+        (self.root / 'tracked').write_text('uncommitted\n')
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.git('checkout', '--', 'tracked')
+        self.git('checkout', '--orphan', 'unapproved')
+        (self.root / 'tracked').write_text('unapproved source\n')
+        self.git('add', 'tracked')
+        self.git('commit', '-qm', 'outside main')
+        outside = self.git('rev-parse', 'HEAD')
+        self.git('checkout', '--detach', self.sha)
+        self.planned['control_sha'] = outside
+        self.environment['GITHUB_SHA'] = outside
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.planned['control_sha'] = self.sha
+        self.environment['GITHUB_SHA'] = self.sha
+        self.git('update-ref', 'refs/tags/' + self.planned['tag'], outside)
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+
+    def test_stable_requires_local_candidate_exact_source_and_matching_version(self):
+        self.automatic_plan('stable')
+        original = dict(self.planned)
+        self.planned['candidate'] = 'v9.9.9-rc.7'
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.planned = original
+        self.git('tag', '-d', self.planned['candidate'])
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+
+
+
+    def test_stable_invalid_draft_identity_prevents_undraft(self):
+        for identity in (True, None, 0, -1, '123', '123/../../other'):
+            with self.subTest(identity=identity):
+                self.state = {'sha': self.sha, 'tag': 'v1.2.3', 'release_id': identity}
+                self.rejected(created=True)
+                self.assertFalse(any('PATCH' in call['args'] for call in self.state['calls']))
 
 
 if __name__ == '__main__':

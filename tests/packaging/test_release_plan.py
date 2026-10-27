@@ -91,9 +91,12 @@ class ReleasePlanTests(unittest.TestCase):
         self.write_policy(next_version, candidate)
         self.commit('promote approved candidate')
 
-    def invoke(self, *, check=False):
+    def invoke(self, *, check=False, base_ref=None):
         self.state_path.write_text(json.dumps(self.state))
-        result = subprocess.run([sys.executable, str(PLANNER)] + (['--check'] if check else []),
+        arguments = [sys.executable, str(PLANNER)] + (['--check'] if check else [])
+        if base_ref is not None:
+            arguments += ['--base-ref', base_ref]
+        result = subprocess.run(arguments,
                                 cwd=self.root, env=self.environment, capture_output=True, check=False, text=True)
         self.state = json.loads(self.state_path.read_text())
         for marker in ['private-planner-unused-token', 'private-planner-rejected-input', 'Traceback', str(self.base)]:
@@ -149,6 +152,27 @@ class ReleasePlanTests(unittest.TestCase):
         self.assertEqual(self.report(self.invoke(check=True)), {'valid': True})
         self.assertFalse(self.state.get('calls'))
         self.assertFalse(self.output_path.exists())
+
+    def test_check_compares_entire_promotion_pr_to_main_merge_base(self):
+        self.git('checkout', '-qb', 'promotion-pr')
+        (self.root / 'tracked.txt').write_text('code changed earlier in PR\n')
+        self.git('add', 'tracked.txt')
+        self.git('commit', '-qm', 'code in earlier PR commit')
+        self.write_policy('0.1.1', 'v0.1.0-rc.1')
+        self.git('add', '.github/release.yaml')
+        self.git('commit', '-qm', 'promotion metadata after code change')
+        # Comparing only the immediate parent would miss the earlier code change.
+        self.assertEqual(self.report(self.invoke(check=True)), {'valid': True})
+        self.rejected(self.invoke(check=True, base_ref='origin/main'))
+        self.assertFalse(self.state.get('calls'))
+
+    def test_check_accepts_metadata_only_promotion_against_main_merge_base(self):
+        self.git('checkout', '-qb', 'promotion-pr')
+        self.write_policy('0.1.1', 'v0.1.0-rc.1')
+        self.git('add', '.github/release.yaml')
+        self.git('commit', '-qm', 'promotion metadata')
+        self.assertEqual(self.report(self.invoke(check=True, base_ref='origin/main')), {'valid': True})
+        self.assertFalse(self.state.get('calls'))
 
     def test_rejects_promotion_mixed_with_code_changes(self):
         (self.root / 'tracked.txt').write_text('mixed change\n')
@@ -248,6 +272,12 @@ class ReleasePlanTests(unittest.TestCase):
         (self.root / '.github' / 'release.yaml').write_text(
             '# Política de publicación\n\nnext_version: 0.1.0 # próxima versión\npromote_candidate: null\n')
         self.assertEqual(self.report(self.invoke(check=True)), {'valid': True})
+
+    def test_runtime_rejects_indented_committed_policy(self):
+        (self.root / '.github' / 'release.yaml').write_text(
+            '  next_version: 0.1.0\npromote_candidate: null\n')
+        self.commit('invalid indented policy')
+        self.rejected(self.invoke())
 
 
 if __name__ == '__main__':

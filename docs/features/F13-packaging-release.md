@@ -38,7 +38,7 @@ La aceptación ejecuta la imagen real: versión, ayuda, YAML offline, lectura de
 
 ## Publicación
 
-Los pushes y PR generan snapshots sin publicar. Un tag estricto `vMAJOR.MINOR.PATCH`, con sufijo SemVer opcional, activa el flujo de release. El commit del tag debe pertenecer al historial de `main` y pasar la CI reutilizable completa, incluida la regresión F00–F12 y la aceptación de distribución.
+Las ramas y PR generan snapshots sin publicar. Al mergear en `main`, el [flujo TBD](TBD-releases.md) selecciona una RC automática o la candidata indicada por una PR de promoción. El commit seleccionado debe pertenecer al historial de `main` y pasar la CI reutilizable completa con la versión final prevista, incluida la regresión F00–F12 y la aceptación de distribución. El publicador crea el tag después de verificar el bundle y la firma; los pushes de tags no disparan otro workflow.
 
 El job de publicación consume el bundle del mismo run y commit. Antes de subir cualquier archivo exige una clave Ed25519 PKCS#8 cifrada válida y su contraseña, proporcionadas mediante `SECRETWRIGHT_SIGNING_KEY` y `SECRETWRIGHT_SIGNING_PASSWORD`. La clave privada permanece fuera del bundle y del contexto Docker. Las firmas efímeras de CI se sustituyen por la firma de release y se verifican de nuevo.
 

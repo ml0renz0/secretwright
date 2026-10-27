@@ -2,15 +2,28 @@ name: CI
 
 on:
   push:
+    branches-ignore:
+      - main
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source commit selected by the release planner
+        type: string
+        required: false
+        default: ''
+      release_tag:
+        description: Prospective release tag to embed in the tested bundle
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ inputs.source_sha && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,6 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -65,6 +79,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -90,6 +105,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -109,6 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -117,10 +134,16 @@ jobs:
           cache: true
       - name: Test artifact verification, signatures and release policy
         run: python3 -m unittest discover -s tests/packaging -p 'test_*.py' -v
+      - name: Validate the release policy and promotion diff
+        if: ${{ inputs.source_sha == '' }}
+        run: python3 scripts/release_plan.py --check --base-ref origin/main
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Install pinned and checksum-verified release tools
         run: bash scripts/install_release_tools.sh
       - name: Build and exercise the distributable bundle without publishing
+        env:
+          SECRETWRIGHT_RELEASE_SHA: ${{ inputs.source_sha }}
+          SECRETWRIGHT_RELEASE_TAG: ${{ inputs.release_tag }}
         run: bash scripts/package_ci.sh
       - name: Preserve verified distribution bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
