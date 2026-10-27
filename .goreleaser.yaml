@@ -1,0 +1,60 @@
+version: 2
+project_name: secretwright
+dist: .package-work
+
+snapshot:
+  version_template: '{{ .Env.SECRETWRIGHT_PACKAGE_VERSION }}'
+
+builds:
+  - id: secretwright
+    main: ./cmd/secretwright
+    binary: secretwright
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    goamd64: [v1]
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w -buildid= -X main.version={{ .Version }}
+
+archives:
+  - id: distribution
+    ids: [secretwright]
+    formats: [tar.gz]
+    name_template: 'secretwright_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    builds_info:
+      owner: root
+      group: root
+      mode: 0o755
+      mtime: '{{ .CommitDate }}'
+    files:
+      - src: README.md
+        info:
+          owner: root
+          group: root
+          mode: 0o644
+          mtime: '{{ .CommitDate }}'
+      - src: LICENSE
+        info:
+          owner: root
+          group: root
+          mode: 0o644
+          mtime: '{{ .CommitDate }}'
+
+checksum:
+  name_template: 'secretwright_{{ .Version }}_checksums.txt'
+  algorithm: sha256
+
+changelog:
+  disable: true
+
+# Publication uses the already verified bundle; GoReleaser never uploads it.
+release:
+  disable: true

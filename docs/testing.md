@@ -1,6 +1,6 @@
 # Pruebas y CI
 
-El workflow `.github/workflows/ci.yml` se ejecuta en cada push, pull request y ejecución manual. Todos los jobs deben pasar para dar la entrega por verificada. Las ejecuciones usan Ubuntu 24.04 y Go 1.27.x; las pruebas reales utilizan un Vault de desarrollo efímero, con la imagen `hashicorp/vault:2.2.0` por defecto.
+El workflow `.github/workflows/ci.yml` se ejecuta en cada push, pull request y ejecución manual, y admite llamadas reutilizables del flujo de release. Todos los jobs deben pasar para dar la entrega por verificada. Las ejecuciones usan Ubuntu 24.04 y Go 1.27.x; las pruebas reales utilizan un Vault de desarrollo efímero, con la imagen `hashicorp/vault:2.2.0` por defecto.
 
 ## Comprobaciones de código
 
@@ -62,6 +62,14 @@ F10 comprueba también recibos y artefactos privados, exclusión de locks, reemp
 
 El laboratorio genera sus propios tokens, ignora las variables Vault del operador y elimina la fixture al terminar. CI activa `VAULT_TEST_REQUIRE_DATABASE=1`: la ausencia de Docker o de la fixture PostgreSQL falla el job. El fallback local con un binario Vault sin Docker omite explícitamente las pruebas de base de datos. Para ejecutar contra un laboratorio ya preparado, `make integration` requiere `VAULT_ADDR` y `VAULT_TEST_ROOT_TOKEN_FILE`; las variables de la fixture PostgreSQL se documentan en `scripts/integration.sh`.
 
+## Distribución
+
+F13 incorpora pruebas de paquetes y firmas con fixtures independientes, OpenSSL real y repositorios Git temporales. Después construye seis archivos con GoReleaser, comprueba sus ejecutables ELF/Mach-O/PE, contenido y permisos, compara dos builds y valida los inventarios SPDX y el manifiesto SHA-256. Una firma efímera debe verificarse y fallar al alterar el manifiesto o cambiar la clave confiable.
+
+La aceptación Docker ejecuta una imagen mínima real: comandos offline sin red, permisos de archivos privados, exportación exclusiva y verificación TLS con CA y hostname correctos e incorrectos. Se valida también el índice OCI de ambas arquitecturas y los hashes de sus blobs. La ejecución nativa se acredita en Linux amd64; las otras plataformas se inspeccionan sin afirmar pruebas nativas ni equivalencia de ACL Windows.
+
+Los snapshots no publican releases. El flujo de tags exige la misma CI completa y consume el bundle verificado de esa ejecución antes de firmar con la clave de release. El [contrato F13](features/F13-packaging-release.md) recoge nombres, confianza y límites.
+
 ## Alcance
 
-No se exige un porcentaje de cobertura: la aceptación se basa en los contratos y sus regresiones observables. El workflow actual no contiene una matriz de sistemas operativos o versiones de Vault, ni reproduce un clúster HA, namespaces Enterprise o TLS entre nodos reales. Tampoco publica releases ni despliega servicios; es un workflow de CI.
+No se exige un porcentaje de cobertura: la aceptación se basa en los contratos y sus regresiones observables. La CI no reproduce un clúster HA, namespaces Enterprise o TLS entre nodos reales, ni una matriz de versiones de Vault. El empaquetado multiplataforma no sustituye ejecutar toda la suite nativamente en cada sistema. La CI prepara artefactos; el workflow separado de tags controla la publicación y no despliega servicios.

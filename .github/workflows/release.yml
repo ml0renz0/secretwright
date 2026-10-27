@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validation:
+    name: Validate the exact release commit and bundle
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Sign the verified bundle and publish its draft release
+    needs: validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download the bundle tested by this workflow's reusable CI
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: secretwright-release-bundle
+          path: release-bundle/
+      - name: Preflight the key, sign and verify every asset before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SECRETWRIGHT_SIGNING_KEY: ${{ secrets.SECRETWRIGHT_SIGNING_KEY }}
+          SECRETWRIGHT_SIGNING_PASSWORD: ${{ secrets.SECRETWRIGHT_SIGNING_PASSWORD }}
+        run: python3 scripts/publish_release.py
