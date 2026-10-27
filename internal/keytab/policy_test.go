@@ -229,6 +229,23 @@ func TestKeytabValidationKeepsLegacyUnknownAndStructuralModesExplicit(t *testing
 	}
 }
 
+func TestKeytabValidationForeignHigherKVNOCannotChangeSelectedRequirements(t *testing.T) {
+	policy := ktPolicy()
+	policy.AllowOtherPrincipals = true
+	selected := ktFixtureRecord()
+	selected.kvno32 = ktNumber(4)
+	foreign := ktFixtureRecord()
+	foreign.components = []string{"HTTP", "other.example.test"}
+	foreign.kvno32 = ktNumber(99)
+	if report, err := keytab.Validate(bytes.NewReader(ktFile(selected, foreign)), policy); err != nil || !report.Valid || report.HighestKVNO != 4 || report.AuthenticationChecked {
+		t.Fatal("foreign higher KVNO changed the selected principal's current version")
+	}
+	selected.enctype, selected.key = 17, bytes.Repeat([]byte{0}, 16)
+	if report, err := keytab.Validate(bytes.NewReader(ktFile(selected, foreign)), policy); err != keytab.ErrValidation || report.Valid || report.HighestKVNO != 4 || report.Reason != "required_enctype_missing" || report.AuthenticationChecked {
+		t.Fatal("foreign higher KVNO supplied an enctype missing from the selected principal")
+	}
+}
+
 func TestKeytabValidationDetectsDuplicateMetadataWithoutComparingKeys(t *testing.T) {
 	first := ktFixtureRecord()
 	second := first

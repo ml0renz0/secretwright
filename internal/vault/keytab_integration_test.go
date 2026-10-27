@@ -269,3 +269,50 @@ func TestIntegrationKeytabLostImportAcknowledgementNeverRepeatsTheWrite(t *testi
 		t.Fatal("the single uncertain keytab write did not retain its exact committed bytes")
 	}
 }
+
+func TestIntegrationKeytabConcurrentCASAllowsExactlyOneRevisionWinner(t *testing.T) {
+	f := prepareKeytabIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	opts := vault.KVOptions{Mount: f.mount, Version: 2}
+	path := "/" + f.mount + "/allowed/concurrent"
+	initial, _ := keytabIntegrationBytes(259, 'E')
+	if _, err := f.client.StoreKeytab(ctx, f.token, path, initial, nil, opts); err != nil {
+		t.Fatal("could not seed the disposable keytab CAS race")
+	}
+	first, _ := keytabIntegrationBytes(260, 'F')
+	second, _ := keytabIntegrationBytes(261, 'G')
+	type result struct {
+		raw     []byte
+		version int
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	for _, raw := range [][]byte{first, second} {
+		go func(raw []byte) {
+			<-start
+			cas := 1
+			written, err := f.client.StoreKeytab(ctx, f.token, path, raw, &cas, opts)
+			results <- result{raw: raw, version: written.Version, err: err}
+		}(raw)
+	}
+	close(start)
+	winners, conflicts := 0, 0
+	var expected []byte
+	for index := 0; index < 2; index++ {
+		outcome := <-results
+		if outcome.err == nil && outcome.version == 2 {
+			winners++
+			expected = outcome.raw
+		} else if errors.Is(outcome.err, vault.ErrConflict) {
+			conflicts++
+		} else {
+			t.Error("concurrent keytab CAS produced an unclassified result")
+		}
+	}
+	stored, err := f.client.ReadKeytab(ctx, f.readOnly, path, 0, opts)
+	if winners != 1 || conflicts != 1 || err != nil || stored.Version != 2 || !bytes.Equal(stored.Data, expected) {
+		t.Error("concurrent keytab CAS overwrote its winner or committed multiple revisions")
+	}
+}

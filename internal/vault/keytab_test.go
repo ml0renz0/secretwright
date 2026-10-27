@@ -226,10 +226,10 @@ func TestKeytabExportRejectsAmbiguousOrNoncanonicalSensitiveEnvelopes(t *testing
 
 func TestKeytabReadRequiresExactPositiveRevisionMetadataAndNeverFallsBack(t *testing.T) {
 	for _, test := range []struct {
-		status int
-		data any
+		status   int
+		data     any
 		metadata any
-		missing bool
+		missing  bool
 	}{
 		{200, nativeVaultKeytabEnvelope(nativeVaultKeytab()), nil, false},
 		{200, nativeVaultKeytabEnvelope(nativeVaultKeytab()), map[string]any{"version": 0}, false},
@@ -275,7 +275,7 @@ func TestKeytabReadCapsTheHTTPBodyBeforeParsingSuccessfulJSON(t *testing.T) {
 func TestKeytabReadPreservesDeniedAndMissingWithoutClaimingMutationUncertainty(t *testing.T) {
 	for _, test := range []struct {
 		status int
-		want error
+		want   error
 	}{
 		{403, vault.ErrPermissionDenied}, {404, vault.ErrNotFound}, {503, nil},
 	} {
@@ -292,6 +292,44 @@ func TestKeytabReadPreservesDeniedAndMissingWithoutClaimingMutationUncertainty(t
 		if err != nil {
 			keytabVaultSafe(t, err)
 		}
+	}
+}
+
+func TestKeytabReadCancellationAfterHeadersReturnsNoPartialKeytabOrRetry(t *testing.T) {
+	started := make(chan struct{})
+	var requests atomic.Int32
+	client := kvTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":{"data":`)
+		w.(http.Flusher).Flush()
+		close(started)
+		<-r.Context().Done()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type result struct {
+		stored vault.StoredKeytab
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		stored, err := client.ReadKeytab(ctx, "selected-token", keytabVaultPath, 0, keytabVaultOptions())
+		done <- result{stored: stored, err: err}
+	}()
+	select {
+	case <-started:
+	case <-done:
+		t.Fatal("keytab response completed before the cancellation fixture was ready")
+	}
+	cancel()
+	got := <-done
+	if !errors.Is(got.err, context.Canceled) || errors.Is(got.err, vault.ErrAccessUnconfirmed) || requests.Load() != 1 || len(got.stored.Data) != 0 || len(got.stored.Report.Entries) != 0 {
+		t.Error("cancellation during the keytab response lost its status, retried or exposed partial credentials")
+	}
+	keytabVaultSafe(t, got.stored)
+	if got.err != nil {
+		keytabVaultSafe(t, got.err)
 	}
 }
 
@@ -328,9 +366,9 @@ func TestKeytabImportNeverRetriesOrCompensatesUnknownWriteOutcomes(t *testing.T)
 
 func TestKeytabImportKeepsCASAndPermissionDenialsDefinite(t *testing.T) {
 	for _, test := range []struct {
-		status int
+		status  int
 		message string
-		want error
+		want    error
 	}{
 		{400, "check-and-set parameter did not match the current version", vault.ErrConflict},
 		{403, "private-f12-upstream", vault.ErrPermissionDenied},

@@ -110,14 +110,14 @@ func TestKeytabInspectionAndPolicyValidationReturnOnlyUnauthenticatedMetadata(t 
 	policy := keytabCLIFile(t, []byte(keytabCLIPolicy), 0o644)
 	code, output, diagnostics := runWriteCLI(f03PanicReader{}, "keytab", "inspect", "--file", file)
 	var inspected struct {
-		Version int `json:"version"`
+		Version               int  `json:"version"`
 		AuthenticationChecked bool `json:"authentication_checked"`
-		Entries []struct {
-			Realm string `json:"realm"`
+		Entries               []struct {
+			Realm      string   `json:"realm"`
 			Components []string `json:"components"`
-			KVNO uint32 `json:"kvno"`
-			Enctype uint16 `json:"enctype"`
-			KeyLength int `json:"key_length"`
+			KVNO       uint32   `json:"kvno"`
+			Enctype    uint16   `json:"enctype"`
+			KeyLength  int      `json:"key_length"`
 		} `json:"entries"`
 	}
 	if code != 0 || diagnostics != "" || json.Unmarshal([]byte(output), &inspected) != nil || inspected.Version != 2 || inspected.AuthenticationChecked || len(inspected.Entries) != 1 || inspected.Entries[0].Realm != "EXAMPLE.TEST" || inspected.Entries[0].KVNO != 3 || inspected.Entries[0].Enctype != 18 || inspected.Entries[0].KeyLength != 32 {
@@ -128,8 +128,8 @@ func TestKeytabInspectionAndPolicyValidationReturnOnlyUnauthenticatedMetadata(t 
 		args := append([]string{"keytab", "validate", "--file", file}, flags...)
 		code, output, diagnostics = runWriteCLI(f03PanicReader{}, args...)
 		var report struct {
-			Valid bool `json:"valid"`
-			PolicyChecked bool `json:"policy_checked"`
+			Valid                 bool `json:"valid"`
+			PolicyChecked         bool `json:"policy_checked"`
 			AuthenticationChecked bool `json:"authentication_checked"`
 		}
 		if code != 0 || diagnostics != "" || json.Unmarshal([]byte(output), &report) != nil || !report.Valid || report.AuthenticationChecked || report.PolicyChecked != (len(flags) != 0) {
@@ -140,7 +140,7 @@ func TestKeytabInspectionAndPolicyValidationReturnOnlyUnauthenticatedMetadata(t 
 	foreign := keytabCLIFile(t, []byte(strings.Replace(keytabCLIPolicy, "app.example.test", "foreign.example.test", 1)), 0o644)
 	code, output, diagnostics = runWriteCLI(f03PanicReader{}, "keytab", "validate", "--file", file, "--policy", foreign)
 	var negative struct {
-		Valid bool `json:"valid"`
+		Valid  bool   `json:"valid"`
 		Reason string `json:"reason"`
 	}
 	if code != 4 || diagnostics == "" || json.Unmarshal([]byte(output), &negative) != nil || negative.Valid || negative.Reason == "" {
@@ -228,8 +228,10 @@ func TestKeytabImportUsesCASAndNeverReportsTheEnvelope(t *testing.T) {
 			t.Error("keytab import changed its exact operator, namespace, mount or method")
 		}
 		var body struct {
-			Data map[string]any `json:"data"`
-			Options struct { CAS int `json:"cas"` } `json:"options"`
+			Data    map[string]any `json:"data"`
+			Options struct {
+				CAS int `json:"cas"`
+			} `json:"options"`
 		}
 		if json.NewDecoder(r.Body).Decode(&body) != nil || body.Options.CAS != cas || len(body.Data) != 3 || body.Data["api_version"] != "secretwright/keytab/v1" || body.Data["encoding"] != "base64" || body.Data["data"] != base64.StdEncoding.EncodeToString(raw) {
 			t.Error("keytab import changed its explicit CAS or canonical binary envelope")
@@ -246,8 +248,10 @@ func TestKeytabImportUsesCASAndNeverReportsTheEnvelope(t *testing.T) {
 		code, output, diagnostics := runWriteCLI(f03PanicReader{}, args...)
 		var report struct {
 			Operation string `json:"operation"`
-			Version int `json:"version"`
-			Report struct { AuthenticationChecked bool `json:"authentication_checked"` } `json:"report"`
+			Version   int    `json:"version"`
+			Report    struct {
+				AuthenticationChecked bool `json:"authentication_checked"`
+			} `json:"report"`
 		}
 		if code != 0 || diagnostics != "" || json.Unmarshal([]byte(output), &report) != nil || report.Operation != "import" || report.Version != cas+1 || report.Report.AuthenticationChecked {
 			t.Error("keytab import did not report its confirmed revision as safe metadata")
@@ -301,7 +305,9 @@ func TestKeytabExportPreservesExactHistoricalBytesAndPrivateOutput(t *testing.T)
 		code, stdout, stderr := runWriteCLI(f03PanicReader{}, args...)
 		got, err := os.ReadFile(output)
 		info, statErr := os.Lstat(output)
-		var report struct { Version int `json:"version"` }
+		var report struct {
+			Version int `json:"version"`
+		}
 		wantVersion := 7
 		if version != 0 {
 			wantVersion = version
@@ -351,5 +357,79 @@ func TestKeytabOfflineShortWritesAndCanceledOnlineOperationsAreChecked(t *testin
 	}
 	if _, err := os.Lstat(output); !os.IsNotExist(err) || requests.Load() != 0 {
 		t.Error("canceled keytab transfer left an output or contacted Vault")
+	}
+}
+
+func TestKeytabExportRetainsCommittedBinaryWhenMetadataOutputFails(t *testing.T) {
+	cleanEnvironment(t)
+	raw := keytabCLIBinary()
+	operator := keytabCLIFile(t, []byte("private-f12-operator\n"), 0o600)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/secret/data/keytabs/app" {
+			t.Error("keytab export changed its read-only request")
+		}
+		accessReply(t, w, map[string]any{"data": map[string]any{"data": map[string]any{"api_version": "secretwright/keytab/v1", "encoding": "base64", "data": base64.StdEncoding.EncodeToString(raw)}, "metadata": map[string]any{"version": 7}}})
+	}))
+	defer server.Close()
+	for _, writer := range []io.Writer{failedWriter{}, blueprintShortWriter{}} {
+		output := filepath.Join(t.TempDir(), "saved.keytab")
+		args := []string{"keytab", "export", "--mount", "secret", "--path", "/secret/keytabs/app", "--out", output, "--address", server.URL, "--token-file", operator}
+		var diagnostics bytes.Buffer
+		code := cli.RunWithInput(context.Background(), args, f03PanicReader{}, writer, &diagnostics, "test")
+		body, err := os.ReadFile(output)
+		info, statErr := os.Lstat(output)
+		if code != 1 || diagnostics.Len() == 0 || err != nil || !bytes.Equal(body, raw) || statErr != nil || info.Mode() != 0o600 {
+			t.Error("failed export metadata removed or changed the committed private binary")
+		}
+		keytabCLISafe(t, "", diagnostics.String(), raw)
+	}
+	if requests.Load() != 2 {
+		t.Error("metadata failure retried a keytab export")
+	}
+}
+
+func TestKeytabExportFailureRemovesOnlyItsUncommittedReservation(t *testing.T) {
+	cleanEnvironment(t)
+	raw := keytabCLIBinary()
+	operator := keytabCLIFile(t, []byte("private-f12-operator\n"), 0o600)
+	foreignPolicy := keytabCLIFile(t, []byte(strings.Replace(keytabCLIPolicy, "app.example.test", "foreign.example.test", 1)), 0o644)
+	for _, test := range []struct {
+		name string
+		status int
+		policy string
+		malformed bool
+		code int
+	}{
+		{name: "policy", status: http.StatusOK, policy: foreignPolicy, code: 4},
+		{name: "permission", status: http.StatusForbidden, code: 2},
+		{name: "missing", status: http.StatusNotFound, code: 3},
+		{name: "upstream", status: http.StatusInternalServerError, code: 1},
+		{name: "malformed", status: http.StatusOK, malformed: true, code: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if test.status != http.StatusOK || test.malformed {
+					w.WriteHeader(test.status)
+					_, _ = io.WriteString(w, `{"errors":["private-f12-upstream"]}`)
+					return
+				}
+				accessReply(t, w, map[string]any{"data": map[string]any{"data": map[string]any{"api_version": "secretwright/keytab/v1", "encoding": "base64", "data": base64.StdEncoding.EncodeToString(raw)}, "metadata": map[string]any{"version": 7}}})
+			}))
+			defer server.Close()
+			output := filepath.Join(t.TempDir(), "rejected.keytab")
+			args := []string{"keytab", "export", "--mount", "secret", "--path", "/secret/keytabs/app", "--out", output, "--address", server.URL, "--token-file", operator}
+			if test.policy != "" {
+				args = append(args, "--policy", test.policy)
+			}
+			code, stdout, stderr := runWriteCLI(f03PanicReader{}, args...)
+			if _, err := os.Lstat(output); !os.IsNotExist(err) || code != test.code || stderr == "" || requests.Load() != 1 {
+				t.Error("failed export published bytes, changed its error code or retried")
+			}
+			keytabCLISafe(t, stdout, stderr, raw)
+		})
 	}
 }

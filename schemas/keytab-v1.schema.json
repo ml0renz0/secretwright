@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:secretwright:keytab:v1",
+  "title": "Secretwright keytab policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "name", "principal", "minimum_kvno", "allowed_enctypes"],
+  "properties": {
+    "api_version": {"const": "secretwright/keytab/v1"},
+    "name": {"type": "string", "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$"},
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["realm", "components"],
+      "properties": {
+        "realm": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "components": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "string", "minLength": 1, "maxLength": 1024}}
+      }
+    },
+    "minimum_kvno": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "allowed_enctypes": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"enum": [1, 2, 3, 16, 17, 18, 19, 20, 23, 24, 25, 26]}},
+    "required_enctypes": {"type": "array", "maxItems": 64, "items": {"enum": [1, 2, 3, 16, 17, 18, 19, 20, 23, 24, 25, 26]}},
+    "allow_other_principals": {"type": "boolean"}
+  }
+}
