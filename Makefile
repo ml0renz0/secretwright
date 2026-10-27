@@ -1,7 +1,7 @@
 GO ?= go
 GOFMT ?= gofmt
 
-.PHONY: build fmt fmt-check vet test integration integration-local check
+.PHONY: build fmt fmt-check vet test integration integration-local check package-test package
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -o bin/secretwright ./cmd/secretwright
@@ -31,3 +31,9 @@ integration-local:
 	./scripts/integration.sh
 
 check: fmt-check vet test build
+
+package-test:
+	python3 -m unittest discover -s tests/packaging -p 'test_*.py' -v
+
+package: package-test
+	bash scripts/package_ci.sh

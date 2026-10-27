@@ -8,6 +8,7 @@ import json
 import os
 import stat
 import struct
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -169,6 +170,20 @@ class ReleaseVerificationTests(unittest.TestCase):
     def test_default_final_bundle_requires_container_assets(self):
         self.rejected(containers=True)
 
+    def test_final_bundle_has_fifteen_manifest_covered_assets(self):
+        spec = importlib.util.spec_from_file_location("release_oci_fixture", Path(__file__).with_name("test_oci.py"))
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        fixture.write_valid_oci(self.directory / f"secretwright_{VERSION}_linux_multiarch.oci.tar", VERSION)
+        for machine in ("amd64", "arm64"):
+            (self.directory / sbom_name("linux", machine, image=True)).write_text(json.dumps(spdx_fixture()))
+        rewrite_manifest(self.directory)
+        summary = VERIFY.verify_release(self.directory, VERSION)
+        self.assertEqual(summary.get("version"), VERSION)
+        self.assertEqual(len(self.manifest.read_text().splitlines()), 15)
+        (self.directory / sbom_name("linux", "arm64", image=True)).unlink()
+        self.rejected(containers=True)
+
     def test_archive_and_sbom_tampering_fail_the_existing_manifest(self):
         for filename in [archive_name("linux", "amd64"), sbom_name("windows", "arm64")]:
             with self.subTest(filename=filename):
@@ -326,12 +341,41 @@ class ReleaseVerificationTests(unittest.TestCase):
         rewrite_manifest(self.directory)
         self.rejected()
 
+    def test_spdx_requires_document_metadata_and_unique_package_identifiers(self):
+        destination = self.directory / sbom_name("linux", "amd64")
+        invalid = []
+        for field in ("dataLicense", "name", "documentNamespace", "creationInfo"):
+            document = spdx_fixture()
+            del document[field]
+            invalid.append(document)
+        document = spdx_fixture()
+        document["packages"][1]["SPDXID"] = document["packages"][0]["SPDXID"]
+        invalid.append(document)
+        for document in invalid:
+            destination.write_text(json.dumps(document))
+            rewrite_manifest(self.directory)
+            self.rejected()
+
     def test_invalid_release_version_cannot_select_paths_or_echo_input(self):
         for version in ["", "v1.2.3", "01.2.3", "1.2", "../private-fixture-marker", "1.2.3\nprivate-fixture-marker"]:
             with self.subTest(version=version[:5]):
                 with self.assertRaises(VERIFY.VerificationError) as failure:
                     VERIFY.verify_release(self.directory, version, containers=False)
                 self.assertNotIn("private-fixture-marker", str(failure.exception))
+
+    def test_cli_reports_safe_json_or_static_failure(self):
+        command = [sys.executable, str(ROOT / "scripts" / "verify_release.py"), str(self.directory),
+                   "--version", VERSION, "--without-containers"]
+        good = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        self.assertEqual(good.returncode, 0)
+        self.assertEqual(good.stderr, "")
+        self.assertEqual(json.loads(good.stdout)["version"], VERSION)
+        self.manifest.write_text("private-fixture-marker")
+        bad = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        self.assertEqual(bad.returncode, 1)
+        self.assertEqual(bad.stdout, "")
+        self.assertNotIn("private-fixture-marker", bad.stderr)
+        self.assertNotIn(str(self.directory), bad.stderr)
 
 
 if __name__ == "__main__":

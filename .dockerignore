@@ -1,0 +1,7 @@
+**
+!Dockerfile
+!.container/
+!.container/linux_amd64/
+!.container/linux_amd64/secretwright
+!.container/linux_arm64/
+!.container/linux_arm64/secretwright

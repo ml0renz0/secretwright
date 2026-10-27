@@ -173,7 +173,7 @@ class ReleaseSignatureTests(unittest.TestCase):
         outside.write_text('private-f13-rejected-input-marker')
         self.manifest.symlink_to(outside)
         self.assert_rejected(self.invoke(SIGN, self.dist, VERSION, self.key))
-        for version in ['../private-f13-rejected-input-marker', '-private-f13-rejected-input-marker', '1.2.3\nprivate-f13-rejected-input-marker']:
+        for version in ['../private-f13-rejected-input-marker', '-private-f13-rejected-input-marker', '1.2.3\nprivate-f13-rejected-input-marker', '01.2.3', '1.2.3-01', '1.2.3+a+b']:
             self.assert_rejected(self.invoke(SIGN, self.dist, version, self.key))
         self.assertFalse(self.signature.exists(), 'invalid manifest published a signature')
         self.assertFalse(self.public.exists(), 'invalid manifest published a public key')
