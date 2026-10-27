@@ -2,7 +2,7 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00–F10 están integradas. F11 está implementada en la [PR #13](https://github.com/ml0renz0/secretwright/pull/13), pendiente de merge, según su [contrato](features/F11-x509-pki.md). F12 y las fases siguientes son planificación pendiente: su presencia en este documento no implica que esas funciones estén implementadas.
+F00–F11 están integradas. F12 está implementada en la [PR #14](https://github.com/ml0renz0/secretwright/pull/14), pendiente de merge, según su [contrato](features/F12-kerberos-keytab.md). F13 sigue siendo planificación pendiente.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
@@ -17,8 +17,8 @@ F00–F10 están integradas. F11 está implementada en la [PR #13](https://githu
 | **F08** | **Forge: Architecture Templates** | Blueprints monousuario, multiusuario, monoapp, multiapp, multientorno y SaaS multi-tenant. Composición de patrones. | Integrada — [PR #10](https://github.com/ml0renz0/secretwright/pull/10), [contrato](features/F08-architecture-templates.md) |
 | **F09** | **Forge: Reconciliation & Drift** | Inventario local de propiedad, adopción explícita, cambios deseados, drift bloqueado por defecto, reparación autorizada, recursos retenidos y recuperación de checkpoints. | Integrada — [PR #11](https://github.com/ml0renz0/secretwright/pull/11), [contrato](features/F09-reconciliation-drift.md) |
 | **F10** | **Secrets Lifecycle & Rotation** | Rotación AppRole hacia un archivo privado, confirmación externa antes de retirar, TTL, renovación de tokens y leases exactos, recuperación ante fallos y YAML por defecto. | Integrada — [PR #12](https://github.com/ml0renz0/secretwright/pull/12), [contrato](features/F10-lifecycle-rotation.md) |
-| **F11** | **X.509 & PKI Management** | Inspección de certificados, claves y CSR; SAN, cadena, caducidades, usos y clave correspondiente; generación local y emisión/firma/revocación mediante PKI Vault existente. | Implementada, pendiente de merge — [PR #13](https://github.com/ml0renz0/secretwright/pull/13), [contrato](features/F11-x509-pki.md) |
-| **F12** | **Kerberos & Keytab Management** | Lectura y validación de keytabs, principales, KVNO, tipos de cifrado e integración con Vault, sin `klist` externo. | Pendiente |
+| **F11** | **X.509 & PKI Management** | Inspección de certificados, claves y CSR; SAN, cadena, caducidades, usos y clave correspondiente; generación local y emisión/firma/revocación mediante PKI Vault existente. | Integrada — [PR #13](https://github.com/ml0renz0/secretwright/pull/13), [contrato](features/F11-x509-pki.md) |
+| **F12** | **Kerberos & Keytab Management** | Lector MIT v2, principales/KVNO/cifrados, política explícita y custodia binaria en Vault KV v2 con CAS y revisiones exactas, sin `klist`. | Implementada, pendiente de merge — [PR #14](https://github.com/ml0renz0/secretwright/pull/14), [contrato](features/F12-kerberos-keytab.md) |
 | **F13** | **Packaging, Releases & Distribution** | Binarios autocontenidos, builds multiplataforma, imágenes Docker mínimas, GoReleaser, SBOM, firma de artefactos y documentación. | Pendiente |
 
 ## Ciclo de cada fase

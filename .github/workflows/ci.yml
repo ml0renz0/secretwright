@@ -58,6 +58,9 @@ jobs:
           - target: x509-pem
             package: ./internal/pki
             function: FuzzInspectPEM
+          - target: kerberos-keytab
+            package: ./internal/keytab
+            function: FuzzKeytab
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

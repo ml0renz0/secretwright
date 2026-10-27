@@ -3,6 +3,12 @@ package schemas
 
 import _ "embed"
 
+//go:embed keytab-v1.schema.json
+var keytabV1 []byte
+
+// KeytabV1 returns a detached copy of the native keytab policy schema.
+func KeytabV1() []byte { return append([]byte(nil), keytabV1...) }
+
 //go:embed pki-v1.schema.json
 var pkiV1 []byte
 

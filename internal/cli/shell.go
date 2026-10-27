@@ -208,6 +208,13 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 		return append([]string(nil), words...)
 	}
 	position := 1
+	if words[0] == "keytab" {
+		action, depth := keytabCommandPrefix(words)
+		if depth == 0 || !keytabOnline(action) {
+			return append([]string(nil), words...)
+		}
+		position = depth
+	}
 	if words[0] == "pki" {
 		kind, action, depth := pkiCommandPrefix(words)
 		if depth == 0 || !pkiOnline(kind, action) {
@@ -246,7 +253,7 @@ func (options shellOptions) commandArgs(words []string, cwd string) []string {
 	case "mounts", "ls", "cat", "cd", "put", "rm", "cp", "mv", "versions", "undelete", "destroy", "rollback",
 		"tree", "find", "replace", "cptree", "rmtree", "backup", "restore":
 		kv = true
-	case "status", "auth", "policy", "approle", "token", "identity", "blueprint", "lifecycle", "pki":
+	case "status", "auth", "policy", "approle", "token", "identity", "blueprint", "lifecycle", "pki", "keytab":
 	default:
 		return append([]string(nil), words...)
 	}
@@ -277,6 +284,8 @@ func shellOverrides(words []string) bool {
 	} else if _, _, depth := lifecycleCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if _, _, depth := pkiCommandPrefix(words); depth != 0 {
+		start = depth
+	} else if _, depth := keytabCommandPrefix(words); depth != 0 {
 		start = depth
 	} else if _, depth := blueprintCommandPrefix(words); depth != 0 {
 		start = depth
