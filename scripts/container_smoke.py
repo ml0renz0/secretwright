@@ -16,6 +16,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+from urllib.parse import parse_qs, urlsplit
 
 
 class SmokeFailure(Exception):
@@ -52,10 +53,7 @@ def binary_keytab():
     return b"\x05\x02" + struct.pack(">I", len(body)) + body
 
 
-@contextlib.contextmanager
-def fixture_server(raw, *, tls=None):
-    observations = {"keytab_reads": 0, "health_reads": 0, "violations": []}
-
+def fixture_handler(raw, observations):
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
@@ -68,7 +66,18 @@ def fixture_server(raw, *, tls=None):
                 value = {"data": {"data": {"api_version": "secretwright/keytab/v1", "encoding": "base64",
                                             "data": base64.b64encode(raw).decode()},
                                   "metadata": {"version": 1, "destroyed": False, "deletion_time": ""}}}
-            elif self.path == "/v1/sys/health":
+            elif urlsplit(self.path).path == "/v1/sys/health":
+                target = urlsplit(self.path)
+                # Vault SDK v1.23.0 requests explicit healthy parsing codes for
+                # every non-active state. Match its path separately from this
+                # exact query, while retaining strict routing for private reads.
+                expected_query = {name: ["299"] for name in (
+                    "uninitcode", "sealedcode", "standbycode", "drsecondarycode",
+                    "performancestandbycode", "removedcode", "haunhealthycode")}
+                if target.scheme or target.netloc or target.fragment or parse_qs(target.query, keep_blank_values=True) != expected_query:
+                    observations["violations"].append("health-query")
+                    self.send_error(400)
+                    return
                 observations["health_reads"] += 1
                 if self.headers.get("X-Vault-Token"):
                     observations["violations"].append("health-credential")
@@ -84,6 +93,13 @@ def fixture_server(raw, *, tls=None):
             self.end_headers()
             self.wfile.write(encoded)
 
+    return Handler
+
+
+@contextlib.contextmanager
+def fixture_server(raw, *, tls=None):
+    observations = {"keytab_reads": 0, "health_reads": 0, "violations": []}
+    Handler = fixture_handler(raw, observations)
     server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
     if tls:
         server.socket = tls.wrap_socket(server.socket, server_side=True)
@@ -99,18 +115,23 @@ def fixture_server(raw, *, tls=None):
 
 
 def tls_fixture(directory):
+    global STAGE
     ca, ca_key = directory / "ca.pem", directory / "ca-key.pem"
     leaf, leaf_key, request = directory / "server.pem", directory / "server-key.pem", directory / "server.csr"
     extension = directory / "server.ext"
     private_file(extension, "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1\n")
     common = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes"]
+    STAGE = "tls-openssl-create-ca"
     command(["openssl", "req", "-x509", *common, "-days", "1", "-subj", "/CN=container-fixture-root",
              "-addext", "basicConstraints=critical,CA:TRUE", "-keyout", str(ca_key), "-out", str(ca)])
+    STAGE = "tls-openssl-create-csr"
     command(["openssl", "req", "-new", *common, "-subj", "/CN=localhost", "-keyout", str(leaf_key), "-out", str(request)])
+    STAGE = "tls-openssl-sign-leaf"
     command(["openssl", "x509", "-req", "-in", str(request), "-CA", str(ca), "-CAkey", str(ca_key),
              "-CAcreateserial", "-days", "1", "-extfile", str(extension), "-out", str(leaf)])
     for path in directory.iterdir():
         os.chmod(path, 0o600)
+    STAGE = "tls-load-fixture-certificate"
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(str(leaf), str(leaf_key))
@@ -228,17 +249,22 @@ def main():
             require(observations["keytab_reads"] == 1 and not observations["violations"] and restored.read_bytes() == raw,
                     "Existing container output triggered another request or was overwritten.")
 
-        STAGE = "verified-tls-and-explicit-trust"
+        STAGE = "tls-fixture-generation"
         tls = tls_fixture(directory)
+        STAGE = "tls-start-fixture-server"
         with fixture_server(raw, tls=tls) as (address, observations):
             status = ["status", "--address", address, "--timeout", "5s", "--namespace", ""]
             trusted = ["VAULT_CACERT=/fixtures/ca.pem", "VAULT_TOKEN=" + PRIVATE_TOKEN]
+            STAGE = "tls-trusted-ca"
             report = json.loads(run(status, online=True, mount=True, user=identity, environment=trusted))
             require(report.get("initialized") is True and report.get("sealed") is False,
                     "Container TLS health did not accept its explicitly trusted CA.")
+            STAGE = "tls-untrusted-ca"
             run(status, expected=1, online=True, mount=True, user=identity)
+            STAGE = "tls-wrong-hostname"
             run(status, expected=1, online=True, mount=True, user=identity,
                 environment=[*trusted, "VAULT_TLS_SERVER_NAME=wrong.fixture.test"])
+            STAGE = "tls-request-audit"
             require(observations["health_reads"] == 1 and not observations["violations"],
                     "Untrusted TLS reached the application or health sent a credential.")
         print("Container smoke passed: native Linux, nonroot defaults, read-only offline YAML/schema, private mapped files/export and verified TLS. Other architectures are inspected, not executed.")

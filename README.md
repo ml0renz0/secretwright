@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F12 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases, certificados X.509/PKI e inspección y custodia de keytabs. **F13 está en preparación**: paquetes multiplataforma, imagen OCI, SBOM y firmas, según su [contrato](docs/features/F13-packaging-release.md).
+**F00–F12 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases, certificados X.509/PKI e inspección y custodia de keytabs. **F13 está implementada en la [PR #15](https://github.com/ml0renz0/secretwright/pull/15), pendiente de merge**: paquetes multiplataforma, imagen OCI, SBOM y firmas, según su [contrato](docs/features/F13-packaging-release.md).
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 

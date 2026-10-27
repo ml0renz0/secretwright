@@ -82,6 +82,7 @@ def native_archive_checks(directory, version, environment):
     with tempfile.TemporaryDirectory(prefix='secretwright-native-package-') as temporary:
         native = None
         for system, architecture in PLATFORMS:
+            STAGE = f'build-metadata-{system}-{architecture}'
             filename = 'secretwright.exe' if system == 'windows' else 'secretwright'
             archive_path = directory / archive_name(version, system, architecture)
             if system == 'windows':
@@ -105,6 +106,7 @@ def native_archive_checks(directory, version, environment):
             if system == 'linux' and architecture == 'amd64':
                 native = binary
         require(native is not None, 'native executable is missing')
+        STAGE = 'native-version-and-help'
         offline = dict(environment, VAULT_ADDR='private-f13-invalid-address',
                        VAULT_TOKEN='private-f13-unused-token',
                        VAULT_CLIENT_TIMEOUT='private-f13-invalid-timeout')
@@ -113,9 +115,11 @@ def native_archive_checks(directory, version, environment):
                 'archive executable has an incorrect version')
         command([str(native), '--help'], environment=offline)
         for family in ('blueprint', 'pki', 'keytab'):
+            STAGE = 'native-schema-' + family
             schema = json.loads(command([str(native), family, 'schema'], environment=offline))
             require(isinstance(schema, dict) and schema.get('$schema') and schema.get('$id'),
                     'offline schema is invalid')
+        STAGE = 'native-yaml-example-and-policy'
         example = command([str(native), 'keytab', 'example'], environment=offline)
         text = example.decode()
         require(any(line.startswith('api_version:') for line in text.splitlines())
@@ -191,17 +195,20 @@ def main():
              '--config', '.goreleaser.yaml', '--parallelism', '2']
     command(build, environment=environment, capture=False)
     for system, architecture in PLATFORMS:
+        STAGE = f'archive-staging-{system}-{architecture}'
         name = archive_name(version, system, architecture)
         shutil.copyfile(work / name, directory / name)
     STAGE = 'second-build-and-byte-reproducibility'
     command(build, environment=environment, capture=False)
     for system, architecture in PLATFORMS:
+        STAGE = f'archive-reproducibility-{system}-{architecture}'
         name = archive_name(version, system, architecture)
         require(digest(work / name) == digest(directory / name),
                 'archive build is not byte reproducible')
     shutil.rmtree(work)
     STAGE = 'archive-spdx-and-complete-checksums'
     for system, architecture in PLATFORMS:
+        STAGE = f'archive-spdx-{system}-{architecture}'
         source = directory / archive_name(version, system, architecture)
         destination = directory / f'secretwright_{version}_{system}_{architecture}.spdx.json'
         command(['syft', 'scan', str(source), '--enrich=-all', '--source-name', 'secretwright',
@@ -216,6 +223,7 @@ def main():
             environment=environment, capture=False)
     oci = directory / f'secretwright_{version}_linux_multiarch.oci.tar'
     for architecture in ('amd64', 'arm64'):
+        STAGE = 'image-spdx-linux-' + architecture
         destination = directory / f'secretwright_{version}_linux_{architecture}.image.spdx.json'
         command(['syft', 'scan', 'oci-archive:' + str(oci), '--platform', 'linux/' + architecture,
                  '--enrich=-all', '--source-name', 'secretwright', '--source-version', version,

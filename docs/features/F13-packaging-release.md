@@ -30,7 +30,7 @@ Una clave pública descargada junto a una firma necesita una referencia de confi
 
 ## Imagen y archivos privados
 
-La imagen usa Distroless estática con CA incluidas y una base fijada por digest. Contiene el binario, carece de shell y runtime Go y ejecuta por defecto como `65532:65532`. Se construye con binarios ya verificados; el contexto Docker solo permite esos binarios y el Dockerfile.
+La imagen usa Distroless Debian 13 estática con CA incluidas y una base fijada por digest. El pin se contrastó en los Dockerfiles de [Sigstore](https://github.com/sigstore/timestamp-authority/blob/e0733fa44b1b10e72a84314de74e9502cb4cdc47/Dockerfile) y [CloudNativePG](https://github.com/cloudnative-pg/cloudnative-pg/blob/7adba6a4a4bce29b16a93f7f67ce32d83c325631/Dockerfile). Contiene el binario, carece de shell y runtime Go y ejecuta por defecto como `65532:65532`. Se construye con binarios ya verificados; el contexto Docker solo permite esos binarios y el Dockerfile.
 
 Los comandos offline funcionan con raíz de solo lectura y sin red. Los archivos `0600` del host requieren ejecutar con el UID/GID de su propietario y montar explícitamente los directorios necesarios. Las salidas privadas necesitan un montaje escribible. No se relajan los permisos del archivo para permitir su lectura desde el contenedor.
 
