@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F11 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases y certificados X.509/PKI. **F12 está implementada en la [PR #14](https://github.com/ml0renz0/secretwright/pull/14), pendiente de merge**: inspección nativa de keytabs, política explícita y custodia en Vault KV v2. Su [contrato](docs/features/F12-kerberos-keytab.md) detalla el alcance.
+**F00–F12 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases, certificados X.509/PKI e inspección y custodia de keytabs. **F13 está en preparación**: paquetes multiplataforma, imagen OCI, SBOM y firmas, según su [contrato](docs/features/F13-packaging-release.md).
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
@@ -389,6 +389,8 @@ Cada fase define primero su contrato funcional y amplía sus escenarios de prueb
 - [Contrato de F10](docs/features/F10-lifecycle-rotation.md)
 - [Contrato de F11](docs/features/F11-x509-pki.md)
 - [Contrato de F12](docs/features/F12-kerberos-keytab.md)
+- [Contrato de F13](docs/features/F13-packaging-release.md)
+- [Instalación y verificación de releases](docs/distribution.md)
 
 La planificación conserva el trabajo de diseño de VCLI. El repositorio original permanece como referencia histórica.
 

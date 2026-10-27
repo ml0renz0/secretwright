@@ -2,7 +2,7 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00–F11 están integradas. F12 está implementada en la [PR #14](https://github.com/ml0renz0/secretwright/pull/14), pendiente de merge, según su [contrato](features/F12-kerberos-keytab.md). F13 sigue siendo planificación pendiente.
+F00–F12 están integradas. F13 está en preparación, según su [contrato](features/F13-packaging-release.md).
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
@@ -18,8 +18,8 @@ F00–F11 están integradas. F12 está implementada en la [PR #14](https://githu
 | **F09** | **Forge: Reconciliation & Drift** | Inventario local de propiedad, adopción explícita, cambios deseados, drift bloqueado por defecto, reparación autorizada, recursos retenidos y recuperación de checkpoints. | Integrada — [PR #11](https://github.com/ml0renz0/secretwright/pull/11), [contrato](features/F09-reconciliation-drift.md) |
 | **F10** | **Secrets Lifecycle & Rotation** | Rotación AppRole hacia un archivo privado, confirmación externa antes de retirar, TTL, renovación de tokens y leases exactos, recuperación ante fallos y YAML por defecto. | Integrada — [PR #12](https://github.com/ml0renz0/secretwright/pull/12), [contrato](features/F10-lifecycle-rotation.md) |
 | **F11** | **X.509 & PKI Management** | Inspección de certificados, claves y CSR; SAN, cadena, caducidades, usos y clave correspondiente; generación local y emisión/firma/revocación mediante PKI Vault existente. | Integrada — [PR #13](https://github.com/ml0renz0/secretwright/pull/13), [contrato](features/F11-x509-pki.md) |
-| **F12** | **Kerberos & Keytab Management** | Lector MIT v2, principales/KVNO/cifrados, política explícita y custodia binaria en Vault KV v2 con CAS y revisiones exactas, sin `klist`. | Implementada, pendiente de merge — [PR #14](https://github.com/ml0renz0/secretwright/pull/14), [contrato](features/F12-kerberos-keytab.md) |
-| **F13** | **Packaging, Releases & Distribution** | Binarios autocontenidos, builds multiplataforma, imágenes Docker mínimas, GoReleaser, SBOM, firma de artefactos y documentación. | Pendiente |
+| **F12** | **Kerberos & Keytab Management** | Lector MIT v2, principales/KVNO/cifrados, política explícita y custodia binaria en Vault KV v2 con CAS y revisiones exactas, sin `klist`. | Integrada — [PR #14](https://github.com/ml0renz0/secretwright/pull/14), [contrato](features/F12-kerberos-keytab.md) |
+| **F13** | **Packaging, Releases & Distribution** | Binarios autocontenidos, builds multiplataforma, imágenes Docker mínimas, GoReleaser, SBOM, firma de artefactos y documentación. | En preparación — [contrato](features/F13-packaging-release.md) |
 
 ## Ciclo de cada fase
 

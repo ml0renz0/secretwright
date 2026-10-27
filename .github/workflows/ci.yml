@@ -4,6 +4,7 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -100,3 +101,31 @@ jobs:
         env:
           VAULT_TEST_REQUIRE_DATABASE: '1'
         run: make integration-local
+
+  packaging:
+    name: Release archives, signatures and container acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Test artifact verification, signatures and release policy
+        run: python3 -m unittest discover -s tests/packaging -p 'test_*.py' -v
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Install pinned and checksum-verified release tools
+        run: bash scripts/install_release_tools.sh
+      - name: Build and exercise the distributable bundle without publishing
+        run: bash scripts/package_ci.sh
+      - name: Preserve verified distribution bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: secretwright-release-bundle
+          path: release-bundle/
+          if-no-files-found: error
+          retention-days: 2

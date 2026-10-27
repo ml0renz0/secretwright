@@ -1,4 +1,9 @@
 /bin/
+/dist/
+/.package-work/
+/.container/
+/release-bundle/
+__pycache__/
 /coverage.out
 *.test
 *.prof
