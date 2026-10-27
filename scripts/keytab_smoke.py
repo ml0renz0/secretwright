@@ -105,7 +105,7 @@ def main():
     schema = run('schema', ['keytab', 'schema'], offline=True)
     require(schema.get('$id') == 'urn:secretwright:keytab:v1', 'Keytab policy schema lost its offline version.')
     example = run('example-yaml', ['keytab', 'example'], offline=True, raw=True)
-    require(example.lstrip().startswith('api_version:') and not example.lstrip().startswith('{'), 'Keytab policy example did not default to YAML.')
+    require(any(line.startswith('api_version:') for line in example.splitlines()) and not example.lstrip().startswith('{'), 'Keytab policy example did not default to YAML.')
     policy_file = fixture / 'f12-policy.yaml'
     write_file(policy_file, example)
     policy = run('example-json', ['keytab', 'example', '--format', 'json'], offline=True)
@@ -222,5 +222,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
+    except SmokeFailure as failure:
+        # These messages are fixed assertions, never response or input bodies.
+        raise SystemExit('Keytab smoke failed [stage=' + STAGE + ']: ' + str(failure)) from None
     except Exception:
         raise SystemExit('Keytab smoke failed [stage=' + STAGE + ']; private captures are withheld.') from None

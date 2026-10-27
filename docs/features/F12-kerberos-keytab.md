@@ -83,7 +83,7 @@ Los keytabs locales requieren archivos regulares `0600`, sin symlinks finales ni
 
 Los inputs, la política, la ruta Vault y la reserva exclusiva de la salida se validan antes de seleccionar el operador o iniciar HTTP. Export nunca sobrescribe un archivo o enlace existente. Si falla stdout después de guardar un archivo, el archivo se conserva.
 
-Import sin respuesta confirmada devuelve `5`, sin retry, rollback ni compensación. También devuelve `5` si la escritura se confirmó y después falló el informe. Export es una lectura; si su informe falla tras guardar, devuelve error de salida y conserva el archivo. Las respuestas KV están acotadas antes de decodificar el contenido.
+Import sin respuesta confirmada devuelve `5`, sin retry, rollback ni compensación. También devuelve `5` si la escritura se confirmó y después falló el informe. Export es una lectura; si su informe falla tras guardar, devuelve error de salida y conserva el archivo. Las respuestas de lectura KV están acotadas antes de decodificar el contenido.
 
 La conexión y timeout existentes se aplican a la operación online completa. La shell conserva su conexión fija, mantiene los comandos offline sin credenciales y excluye todo `keytab` del historial. El autocompletado solo ofrece el grupo, sin enumerar rutas ni principales.
 
