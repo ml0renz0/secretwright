@@ -196,7 +196,7 @@ func Validate(input io.Reader, policy Policy) (ValidationReport, error) {
 func Example() []byte {
 	policy := Policy{
 		APIVersion: APIVersion, Name: "web",
-		Principal: PrincipalSpec{Realm: "EXAMPLE.TEST", Components: []string{"HTTP", "app.example.test"}},
+		Principal:   PrincipalSpec{Realm: "EXAMPLE.TEST", Components: []string{"HTTP", "app.example.test"}},
 		MinimumKVNO: 3, AllowedEnctypes: []uint16{17, 18, 19, 20}, RequiredEnctypes: []uint16{18},
 	}
 	body, _ := json.MarshalIndent(policy, "", "  ")

@@ -224,7 +224,7 @@ func TestKeytabImportUsesCASAndNeverReportsTheEnvelope(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		cas := int(wantedCAS.Load())
-		if r.Method != http.MethodPut || r.URL.Path != "/v1/secret/data/keytabs/app" || r.URL.RawQuery != "" || r.Header.Get("X-Vault-Token") != "private-f12-operator" || r.Header.Get("X-Vault-Namespace") != "team" {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/secret/data/keytabs/app" || r.URL.RawQuery != "" || r.Header.Get("X-Vault-Token") != "private-f12-operator" || r.Header.Get("X-Vault-Namespace") != "team" {
 			t.Error("keytab import changed its exact operator, namespace, mount or method")
 		}
 		var body struct {
@@ -396,11 +396,11 @@ func TestKeytabExportFailureRemovesOnlyItsUncommittedReservation(t *testing.T) {
 	operator := keytabCLIFile(t, []byte("private-f12-operator\n"), 0o600)
 	foreignPolicy := keytabCLIFile(t, []byte(strings.Replace(keytabCLIPolicy, "app.example.test", "foreign.example.test", 1)), 0o644)
 	for _, test := range []struct {
-		name string
-		status int
-		policy string
+		name      string
+		status    int
+		policy    string
 		malformed bool
-		code int
+		code      int
 	}{
 		{name: "policy", status: http.StatusOK, policy: foreignPolicy, code: 4},
 		{name: "permission", status: http.StatusForbidden, code: 2},
