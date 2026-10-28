@@ -2,26 +2,54 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 permissions:
   contents: read
 
+# Each main merge keeps its own run; newer merges cannot replace pending RCs.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: Select the candidate or approved stable source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+      candidate: ${{ steps.plan.outputs.candidate }}
+      control_sha: ${{ steps.plan.outputs.control_sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Plan from the merged policy and published candidate
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_plan.py
+
   validation:
-    name: Validate the exact release commit and bundle
+    name: Validate the exact release source and prospective version
+    needs: plan
     uses: ./.github/workflows/ci.yml
+    with:
+      source_sha: ${{ needs.plan.outputs.sha }}
+      release_tag: ${{ needs.plan.outputs.tag }}
     permissions:
       contents: read
 
   publish:
-    name: Sign the verified bundle and publish its draft release
-    needs: validation
+    name: Sign the tested bundle, create its tag and publish
+    needs: [plan, validation]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -31,16 +59,34 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
+          path: release-control
           fetch-depth: 0
           persist-credentials: false
-      - name: Download the bundle tested by this workflow's reusable CI
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download only the bundle validated by this run
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: secretwright-release-bundle
-          path: release-bundle/
-      - name: Preflight the key, sign and verify every asset before publishing
+          path: release-source/release-bundle/
+      - name: Record the validated plan without shell interpolation
+        env:
+          RELEASE_PLAN: ${{ toJSON(needs.plan.outputs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          plan = json.loads(os.environ['RELEASE_PLAN'])
+          Path(os.environ['RUNNER_TEMP'], 'secretwright-release-plan.json').write_text(json.dumps(plan))
+          PY
+      - name: Verify signing and remote state before creating the release tag
+        working-directory: release-source
         env:
           GH_TOKEN: ${{ github.token }}
           SECRETWRIGHT_SIGNING_KEY: ${{ secrets.SECRETWRIGHT_SIGNING_KEY }}
           SECRETWRIGHT_SIGNING_PASSWORD: ${{ secrets.SECRETWRIGHT_SIGNING_PASSWORD }}
-        run: python3 scripts/publish_release.py
+        run: python3 ../release-control/scripts/publish_release.py --plan "$RUNNER_TEMP/secretwright-release-plan.json"

@@ -2,7 +2,7 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00–F12 están integradas. F13 está implementada en la [PR #15](https://github.com/ml0renz0/secretwright/pull/15), pendiente de merge, según su [contrato](features/F13-packaging-release.md).
+F00–F13 están integradas. El siguiente hito es la primera candidata de `0.1.0`, con [notas y alcance](releases/v0.1.0-rc.1.md). El [flujo TBD de releases](features/TBD-releases.md) automatiza las RC al integrar cambios en `main` y las estables mediante PR de promoción. La [guía de distribución](distribution.md) describe la configuración de firma y la publicación.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
@@ -19,7 +19,7 @@ F00–F12 están integradas. F13 está implementada en la [PR #15](https://githu
 | **F10** | **Secrets Lifecycle & Rotation** | Rotación AppRole hacia un archivo privado, confirmación externa antes de retirar, TTL, renovación de tokens y leases exactos, recuperación ante fallos y YAML por defecto. | Integrada — [PR #12](https://github.com/ml0renz0/secretwright/pull/12), [contrato](features/F10-lifecycle-rotation.md) |
 | **F11** | **X.509 & PKI Management** | Inspección de certificados, claves y CSR; SAN, cadena, caducidades, usos y clave correspondiente; generación local y emisión/firma/revocación mediante PKI Vault existente. | Integrada — [PR #13](https://github.com/ml0renz0/secretwright/pull/13), [contrato](features/F11-x509-pki.md) |
 | **F12** | **Kerberos & Keytab Management** | Lector MIT v2, principales/KVNO/cifrados, política explícita y custodia binaria en Vault KV v2 con CAS y revisiones exactas, sin `klist`. | Integrada — [PR #14](https://github.com/ml0renz0/secretwright/pull/14), [contrato](features/F12-kerberos-keytab.md) |
-| **F13** | **Packaging, Releases & Distribution** | Binarios autocontenidos, builds multiplataforma, imágenes Docker mínimas, GoReleaser, SBOM, firma de artefactos y documentación. | Implementada, pendiente de merge — [PR #15](https://github.com/ml0renz0/secretwright/pull/15), [contrato](features/F13-packaging-release.md) |
+| **F13** | **Packaging, Releases & Distribution** | Binarios autocontenidos, builds multiplataforma, imágenes Docker mínimas, GoReleaser, SBOM, firma de artefactos y documentación. | Integrada — [PR #15](https://github.com/ml0renz0/secretwright/pull/15), [contrato](features/F13-packaging-release.md) |
 
 ## Ciclo de cada fase
 

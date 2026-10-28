@@ -45,7 +45,31 @@ def reply(status, body, success=None):
     sys.exit((0 if status == 200 else 1) if success is None else success)
 if args[0] == 'api':
     endpoint = args[-1]
+    if '/releases/' in endpoint and '--method' in args and args[args.index('--method') + 1] == 'PATCH':
+        state['published'] = True
+        state['latest_policy'] = args[args.index('make_latest=legacy')] if 'make_latest=legacy' in args else None
+        save(); print(json.dumps({'id': 123, 'tag_name': state['tag'], 'draft': False, 'prerelease': False, 'assets': state['uploaded']})); sys.exit(0)
+    if '/git/refs' in endpoint and '--method' in args and args[args.index('--method') + 1] == 'POST':
+        if state.get('tag_create_error'):
+            save(); print('private-f13-upstream-error', file=sys.stderr); sys.exit(1)
+        state['tag_created'] = True
+        state['tag_create_count'] = state.get('tag_create_count', 0) + 1
+        save(); print(json.dumps({'ref': 'refs/tags/' + state['tag']})); sys.exit(0)
+    if '/git/ref/tags/' in endpoint and state.get('candidate') and endpoint.endswith('/' + state['candidate']):
+        state['candidate_tag_checks'] = state.get('candidate_tag_checks', 0) + 1
+        moved = state.get('candidate_moved') == 'before-create' or (state.get('candidate_moved') == 'before-publish' and state['candidate_tag_checks'] >= 2)
+        reply(200, {'object': {'type': 'commit', 'sha': 'e' * 40 if moved else state['sha']}})
+    if '/releases/tags/' in endpoint and state.get('candidate') and endpoint.endswith('/' + state['candidate']):
+        state['candidate_release_checks'] = state.get('candidate_release_checks', 0) + 1
+        status = state.get('candidate_status', 200)
+        if state.get('candidate_disappears') and state['candidate_release_checks'] >= 2:
+            status = 404
+        reply(status, {'tag_name': state['candidate'], 'draft': state.get('candidate_draft', False),
+              'prerelease': not state.get('candidate_stable', False), 'published_at': state.get('candidate_published_at', '2026-10-27T00:00:00Z')})
     if '/git/ref/tags/' in endpoint:
+        if state.get('automatic') and not state.get('tag_created'):
+            reply(state.get('existing_tag_status', 404), {'object': {'type': 'commit', 'sha': state['sha']}})
+
         state['tag_checks'] = state.get('tag_checks', 0) + 1
         moved = state.get('move_tag') == 'before-create' or state.get('move_tag') == 'before-publish' and state['tag_checks'] >= 2
         sha = 'f' * 40 if moved else state['sha']
@@ -69,7 +93,7 @@ if args[0] == 'api':
         if error == 'extra': assets.append({'name': 'unexpected.txt', 'size': 1, 'digest': 'sha256:' + '0'*64, 'state': 'uploaded'})
         if error == 'missing': assets.pop()
         if error == 'duplicate': assets[-1] = dict(assets[0])
-        reply(200, {'tag_name': state['tag'] if error != 'tag' else 'v9.9.9', 'draft': error != 'not-draft',
+        reply(200, {'id': state.get('release_id', 123), 'tag_name': state['tag'] if error != 'tag' else 'v9.9.9', 'draft': error != 'not-draft',
                     'prerelease': state.get('prerelease', False), 'assets': assets})
 if args[:2] == ['release', 'create']:
     paths = [Path(arg) for arg in args[2:] if arg.startswith('/') and Path(arg).is_file()]
@@ -180,7 +204,12 @@ class ReleasePublicationTests(unittest.TestCase):
 
     def invoke(self):
         self.save()
-        result = subprocess.run([sys.executable, str(PUBLISH)], cwd=self.root, env=self.environment,
+        arguments = [sys.executable, str(PUBLISH)]
+        if getattr(self, 'planned', None) is not None:
+            plan_path = self.base / 'release-plan.json'
+            plan_path.write_text(json.dumps(self.planned))
+            arguments += ['--plan', str(plan_path)]
+        result = subprocess.run(arguments, cwd=self.root, env=self.environment,
                                 capture_output=True, check=False, text=True)
         self.state = json.loads(self.state_path.read_text())
         for marker in [PASSWORD, TOKEN, 'BEGIN ENCRYPTED PRIVATE KEY', 'private-f13-upstream-error',
@@ -285,6 +314,166 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertIn('--latest=false', create)
         endpoints = [call['args'][-1] for call in self.state['calls'] if call['args'][0] == 'api']
         self.assertTrue(all('%2B' in endpoint for endpoint in endpoints if '/tags/' in endpoint))
+
+
+    def automatic_plan(self, mode='rc'):
+        self.environment.update(GITHUB_EVENT_NAME='push', GITHUB_REF='refs/heads/main',
+                                GITHUB_REF_TYPE='branch', GITHUB_REF_NAME='main', GITHUB_RUN_NUMBER='7')
+        self.state = {'sha': self.sha, 'automatic': True}
+        candidate = ''
+        control = self.sha
+        version = '1.2.3-rc.7'
+        if mode == 'stable':
+            version = '1.2.3'
+            candidate = 'v1.2.3-rc.7'
+            self.git('tag', candidate)
+            policy = self.root / '.github' / 'release.yaml'
+            policy.parent.mkdir()
+            policy.write_text('next_version: 1.2.4\npromote_candidate: v1.2.3-rc.7\n')
+            self.git('add', '.github/release.yaml')
+            self.git('commit', '-qm', 'promote candidate')
+            control = self.git('rev-parse', 'HEAD')
+            self.git('update-ref', 'refs/remotes/origin/main', control)
+            self.git('checkout', '--detach', self.sha)
+            self.state['candidate'] = candidate
+        self.environment['GITHUB_SHA'] = control
+        self.version = version
+        self.state['tag'] = 'v' + version
+        self.write_bundle(version)
+        self.planned = dict(mode=mode, tag='v' + version, version=version, sha=self.sha,
+                            candidate=candidate, control_sha=control)
+        return self.planned
+
+    def test_main_merge_creates_exact_tag_only_after_signing_and_publishes_rc(self):
+        self.automatic_plan()
+        self.assertEqual(self.invoke().returncode, 0)
+        self.assertTrue(self.state['tag_created'])
+        self.assertEqual(self.state['tag_create_count'], 1)
+        post = next(call['args'] for call in self.state['calls'] if 'POST' in call['args'])
+        self.assertIn('ref=refs/tags/v1.2.3-rc.7', post)
+        self.assertIn('sha=' + self.sha, post)
+        self.assertTrue(self.state['published'])
+        edit = next(call['args'] for call in self.state['calls'] if call['args'][:2] == ['release', 'edit'])
+        self.assertIn('--latest=false', edit)
+
+    def test_stable_promotes_candidate_sha_while_main_has_advanced_and_marks_latest(self):
+        self.automatic_plan('stable')
+        self.assertNotEqual(self.planned['sha'], self.planned['control_sha'])
+        self.assertEqual(self.invoke().returncode, 0)
+        post = next(call['args'] for call in self.state['calls'] if 'POST' in call['args'])
+        self.assertIn('sha=' + self.sha, post)
+        self.assertNotIn('sha=' + self.planned['control_sha'], post)
+        self.assertEqual(self.state['candidate_tag_checks'], 2)
+        self.assertEqual(self.state['candidate_release_checks'], 2)
+        edit = next(call['args'] for call in self.state['calls'] if 'PATCH' in call['args'])
+        self.assertIn('draft=false', edit)
+        self.assertIn('make_latest=legacy', edit)
+        self.assertEqual(self.state['latest_policy'], 'make_latest=legacy')
+
+    def test_planned_release_checks_context_shape_source_and_number_before_network(self):
+        original = dict(self.automatic_plan())
+        cases = [('sha', 'f' * 40), ('control_sha', 'f' * 40), ('version', '9.9.9'),
+                 ('tag', 'v1.2.3-rc.8'), ('candidate', 'v1.2.3-rc.6'), ('mode', 'other')]
+        for field, value in cases:
+            with self.subTest(field=field):
+                self.planned = dict(original, **{field: value})
+                self.rejected()
+                self.assertFalse(self.state.get('calls'))
+        self.planned = dict(original, unexpected='field')
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.planned = original
+        for field, value in [('GITHUB_EVENT_NAME', 'pull_request'), ('GITHUB_REF', 'refs/heads/other'),
+                             ('GITHUB_SHA', 'f' * 40), ('GITHUB_RUN_NUMBER', '08')]:
+            with self.subTest(field=field):
+                previous = self.environment[field]
+                self.environment[field] = value
+                self.rejected()
+                self.assertFalse(self.state.get('calls'))
+                self.environment[field] = previous
+
+    def test_automatic_missing_key_or_bad_artifact_never_creates_remote_tag(self):
+        self.automatic_plan()
+        self.environment['SECRETWRIGHT_SIGNING_KEY'] = 'private-f13-rejected-key-body'
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.environment['SECRETWRIGHT_SIGNING_KEY'] = self.private_key
+        (self.bundle / ARTIFACTS.archive_name('linux', 'amd64', self.version)).write_bytes(b'altered')
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+
+    def test_automatic_existing_tag_and_creation_failure_do_not_create_release(self):
+        self.automatic_plan()
+        original = dict(self.state)
+        for field, value in [('existing_tag_status', 200), ('existing_tag_status', 403),
+                             ('tag_create_error', True)]:
+            with self.subTest(field=field, value=value):
+                self.state = dict(original, **{field: value})
+                self.rejected()
+                self.assertFalse(self.state.get('created'))
+                self.assertFalse(self.state.get('tag_created'))
+                self.assertFalse(any(call['args'][:2] == ['release', 'create'] for call in self.state['calls']))
+
+    def test_stable_invalid_candidate_prevents_tag_creation_and_late_change_prevents_undraft(self):
+        self.automatic_plan('stable')
+        original = dict(self.state)
+        for field, value in [('candidate_draft', True), ('candidate_stable', True),
+                             ('candidate_published_at', None), ('candidate_status', 404),
+                             ('candidate_moved', 'before-create')]:
+            with self.subTest(field=field):
+                self.state = dict(original, **{field: value})
+                self.rejected()
+                self.assertFalse(self.state.get('tag_created'))
+        for field, value in [('candidate_moved', 'before-publish'), ('candidate_disappears', True)]:
+            with self.subTest(field=field):
+                self.state = dict(original, **{field: value})
+                self.rejected(created=True)
+                self.assertTrue(self.state['tag_created'])
+
+
+
+    def test_planned_tag_head_and_control_history_must_match_approved_source(self):
+        self.automatic_plan()
+        self.git('tag', self.planned['tag'])
+        (self.root / 'tracked').write_text('uncommitted\n')
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.git('checkout', '--', 'tracked')
+        self.git('checkout', '--orphan', 'unapproved')
+        (self.root / 'tracked').write_text('unapproved source\n')
+        self.git('add', 'tracked')
+        self.git('commit', '-qm', 'outside main')
+        outside = self.git('rev-parse', 'HEAD')
+        self.git('checkout', '--detach', self.sha)
+        self.planned['control_sha'] = outside
+        self.environment['GITHUB_SHA'] = outside
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.planned['control_sha'] = self.sha
+        self.environment['GITHUB_SHA'] = self.sha
+        self.git('update-ref', 'refs/tags/' + self.planned['tag'], outside)
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+
+    def test_stable_requires_local_candidate_exact_source_and_matching_version(self):
+        self.automatic_plan('stable')
+        original = dict(self.planned)
+        self.planned['candidate'] = 'v9.9.9-rc.7'
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+        self.planned = original
+        self.git('tag', '-d', self.planned['candidate'])
+        self.rejected()
+        self.assertFalse(self.state.get('calls'))
+
+
+
+    def test_stable_invalid_draft_identity_prevents_undraft(self):
+        for identity in (True, None, 0, -1, '123', '123/../../other'):
+            with self.subTest(identity=identity):
+                self.state = {'sha': self.sha, 'tag': 'v1.2.3', 'release_id': identity}
+                self.rejected(created=True)
+                self.assertFalse(any('PATCH' in call['args'] for call in self.state['calls']))
 
 
 if __name__ == '__main__':

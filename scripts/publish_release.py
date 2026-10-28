@@ -16,6 +16,9 @@ from urllib.parse import quote
 
 SCRIPTS = Path(__file__).resolve().parent
 MAX_API_RESPONSE = 4 << 20
+NUMERIC = r'(?:0|[1-9][0-9]*)'
+STABLE_VERSION = re.compile(NUMERIC + r'\.' + NUMERIC + r'\.' + NUMERIC)
+SHA = re.compile(r'[0-9a-f]{40}')
 
 
 class PublicationError(Exception):
@@ -158,8 +161,73 @@ def require_remote_tag(repository, tag, sha, *, cwd, environment):
     fail()
 
 
-def require_draft(value, tag, local, prerelease):
-    if value.get('tag_name') != tag or value.get('draft') is not True or value.get('prerelease') is not prerelease:
+
+def require_candidate_release(repository, candidate, sha, *, cwd, environment):
+    code, value = api_get(f'repos/{repository}/releases/tags/{quote(candidate, safe="")}',
+                          cwd=cwd, environment=environment)
+    if (code != 200 or value.get('tag_name') != candidate or value.get('draft') is not False
+            or value.get('prerelease') is not True or not isinstance(value.get('published_at'), str)
+            or not value['published_at'].strip()):
+        fail()
+    require_remote_tag(repository, candidate, sha, cwd=cwd, environment=environment)
+
+
+def planned_context(root, environment, planned):
+    keys = {'mode', 'tag', 'version', 'sha', 'candidate', 'control_sha'}
+    if (not isinstance(planned, dict) or set(planned) != keys
+            or any(not isinstance(value, str) or len(value) > 256 for value in planned.values())
+            or planned['mode'] not in ('rc', 'stable')
+            or SHA.fullmatch(planned['sha']) is None or SHA.fullmatch(planned['control_sha']) is None
+            or environment.get('GITHUB_EVENT_NAME') != 'push'
+            or environment.get('GITHUB_REF') != 'refs/heads/main'
+            or environment.get('GITHUB_REF_TYPE') != 'branch'
+            or environment.get('GITHUB_SHA') != planned['control_sha']
+            or re.fullmatch(r'[1-9][0-9]*', environment.get('GITHUB_RUN_NUMBER', '')) is None
+            or planned['tag'] != 'v' + planned['version']):
+        fail()
+    if planned['mode'] == 'rc':
+        version = planned['version'].split('-rc.', 1)
+        if (len(version) != 2 or STABLE_VERSION.fullmatch(version[0]) is None
+                or version[1] != environment['GITHUB_RUN_NUMBER'] or planned['candidate']
+                or planned['sha'] != planned['control_sha']):
+            fail()
+    elif (STABLE_VERSION.fullmatch(planned['version']) is None
+          or re.fullmatch(re.escape(planned['tag']) + r'-rc\.[1-9][0-9]*', planned['candidate']) is None):
+        fail()
+    def git(*arguments):
+        return checked_run(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', *arguments],
+                           cwd=root, environment=environment).decode('ascii').strip()
+    if git('rev-parse', '--verify', 'HEAD^{commit}') != planned['sha']:
+        fail()
+    git('merge-base', '--is-ancestor', planned['sha'], planned['control_sha'])
+    if planned['mode'] == 'stable':
+        git('merge-base', '--is-ancestor', planned['sha'], planned['control_sha'] + '^1')
+    git('merge-base', '--is-ancestor', planned['control_sha'], 'refs/remotes/origin/main')
+    if planned['candidate'] and git('rev-parse', '--verify', 'refs/tags/' + planned['candidate'] + '^{commit}') != planned['sha']:
+        fail()
+    # The local tag allows the existing checkout/ancestry/clean-tree preflight to be reused.
+    # A remote tag is created only after the bundle and production key have been checked.
+    probe = subprocess.run(['git', 'show-ref', '--verify', '--quiet', 'refs/tags/' + planned['tag']],
+                           cwd=root, env=environment, capture_output=True, check=False, timeout=15)
+    if probe.returncode == 1:
+        git('update-ref', 'refs/tags/' + planned['tag'], planned['sha'], '0' * 40)
+    elif probe.returncode != 0:
+        fail()
+    return planned['tag'], planned['sha']
+
+
+def create_remote_tag(repository, tag, sha, *, cwd, environment):
+    code, _ = api_get(f'repos/{repository}/git/ref/tags/{quote(tag, safe="")}',
+                      cwd=cwd, environment=environment)
+    if code != 404:
+        fail()
+    checked_run(['gh', 'api', '--hostname', 'github.com', '--method', 'POST',
+                 '-f', 'ref=refs/tags/' + tag, '-f', 'sha=' + sha, f'repos/{repository}/git/refs'],
+                cwd=cwd, environment=environment)
+
+
+def require_draft(value, tag, local, prerelease, *, draft=True):
+    if value.get('tag_name') != tag or value.get('draft') is not draft or value.get('prerelease') is not prerelease:
         fail()
     assets = value.get('assets')
     if not isinstance(assets, list) or len(assets) != len(local):
@@ -179,7 +247,7 @@ def require_draft(value, tag, local, prerelease):
         fail()
 
 
-def publish(root, environment):
+def publish(root, environment, *, planned=None):
     root = Path(root).resolve()
     environment = dict(environment)
     repository = environment.get('GITHUB_REPOSITORY', '')
@@ -187,11 +255,13 @@ def publish(root, environment):
     key = environment.get('SECRETWRIGHT_SIGNING_KEY', '')
     password = environment.get('SECRETWRIGHT_SIGNING_PASSWORD', '')
     token = environment.get('GH_TOKEN', '')
-    if (environment.get('GITHUB_REF_TYPE') != 'tag'
+    if ((planned is None and environment.get('GITHUB_REF_TYPE') != 'tag')
             or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', repository) is None
             or not token.strip() or any(character in token for character in '\r\n\0')
             or not key or len(key.encode()) > 65536 or not password):
         fail()
+    if planned is not None:
+        tag, sha = planned_context(root, environment, planned)
     proof = checked_run([sys.executable, str(SCRIPTS / 'release_preflight.py'), '--tag=' + tag,
                          '--sha=' + sha, '--main-ref=origin/main'], cwd=root, environment=environment)
     try:
@@ -245,6 +315,10 @@ def publish(root, environment):
         code, _ = api_get(endpoint, cwd=root, environment=gh_environment)
         if code != 404:
             fail()
+        if planned is not None:
+            if planned['candidate']:
+                require_candidate_release(repository, planned['candidate'], sha, cwd=root, environment=gh_environment)
+            create_remote_tag(repository, tag, sha, cwd=root, environment=gh_environment)
         require_remote_tag(repository, tag, sha, cwd=root, environment=gh_environment)
         prerelease = '-' in version.split('+', 1)[0]
         notes = ('Contains six platform archives, SPDX SBOMs, a Linux multiarch OCI image and a signed SHA-256 manifest. '
@@ -264,16 +338,46 @@ def publish(root, environment):
         if inventory(stage, names) != local:
             fail()
         require_remote_tag(repository, tag, sha, cwd=root, environment=gh_environment)
-        checked_run(['gh', 'release', 'edit', tag, '--repo', repository, '--draft=false'],
-                    cwd=root, environment=gh_environment)
+        if planned is not None and planned['candidate']:
+            require_candidate_release(repository, planned['candidate'], sha, cwd=root, environment=gh_environment)
+        if prerelease:
+            checked_run(['gh', 'release', 'edit', tag, '--repo', repository, '--draft=false', '--latest=false'],
+                        cwd=root, environment=gh_environment)
+        else:
+            release_id = remote.get('id')
+            if type(release_id) is not int or release_id <= 0:
+                fail()
+            # Let GitHub compare published versions server-side. Forcing latest=true can
+            # regress the latest stable when two promotions finish in reverse order.
+            result = checked_run(['gh', 'api', '--hostname', 'github.com', '--method', 'PATCH',
+                                  '-F', 'draft=false', '-f', 'make_latest=legacy',
+                                  f'repos/{repository}/releases/{release_id}'],
+                                 cwd=root, environment=gh_environment)
+            try:
+                published = json.loads(result)
+            except (ValueError, UnicodeError):
+                fail()
+            if (not isinstance(published, dict) or type(published.get('id')) is not int
+                    or published['id'] != release_id):
+                fail()
+            require_draft(published, tag, local, False, draft=False)
     return {'version': version, 'assets': len(names), 'published': True}
 
 
 def main():
     try:
-        if len(sys.argv) != 1:
+        planned = None
+        if len(sys.argv) == 3 and sys.argv[1] == '--plan':
+            path = Path(sys.argv[2])
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
+                fail()
+            planned = json.loads(path.read_text(encoding='utf-8'))
+            if planned is None:
+                fail()
+        elif len(sys.argv) != 1:
             fail()
-        result = publish(Path.cwd(), os.environ)
+        result = publish(Path.cwd(), os.environ, planned=planned)
     except Exception:
         print('secretwright: release publication failed; inspect any existing draft before retrying', file=sys.stderr)
         return 1

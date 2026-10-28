@@ -52,6 +52,18 @@ def archive_name(version, system, architecture):
 def package_version(environment):
     sha = command(['git', 'rev-parse', 'HEAD']).decode().strip()
     require(re.fullmatch('[0-9a-f]{40}', sha) is not None, 'invalid source commit')
+    selected_sha = environment.get('SECRETWRIGHT_RELEASE_SHA', '')
+    selected_tag = environment.get('SECRETWRIGHT_RELEASE_TAG', '')
+    if selected_sha or selected_tag:
+        number = r'(?:0|[1-9][0-9]*)'
+        release_tag = r'v' + number + r'\.' + number + r'\.' + number + r'(?:-rc\.[1-9][0-9]*)?'
+        require(selected_sha == sha and len(selected_tag) <= 128
+                and re.fullmatch(release_tag, selected_tag) is not None,
+                'invalid prospective release selection')
+        command(['git', 'merge-base', '--is-ancestor', sha, 'refs/remotes/origin/main'])
+        command(['git', 'diff', '--quiet', '--exit-code', '--'])
+        command(['git', 'diff', '--cached', '--quiet', '--exit-code', '--'])
+        return selected_tag[1:]
     if environment.get('GITHUB_REF_TYPE') == 'tag':
         report = json.loads(command([
             sys.executable, str(ROOT / 'scripts' / 'release_preflight.py'),
