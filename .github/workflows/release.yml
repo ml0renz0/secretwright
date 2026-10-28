@@ -81,6 +81,7 @@ jobs:
           import json, os
           from pathlib import Path
           plan = json.loads(os.environ['RELEASE_PLAN'])
+          plan.setdefault('candidate', '')
           Path(os.environ['RUNNER_TEMP'], 'secretwright-release-plan.json').write_text(json.dumps(plan))
           PY
       - name: Verify signing and remote state before creating the release tag
