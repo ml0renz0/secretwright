@@ -136,8 +136,17 @@ class DebianVerificationTests(unittest.TestCase):
         for source, expected in cases.items():
             with self.subTest(source=source):
                 self.assertEqual(VERIFY.debian_version(source), expected)
-                self.assertEqual(VERIFY.deb_name(source, 'arm64'), 'secretwright_' + expected + '_arm64.deb')
-                self.assertEqual(VERIFY.deb_sbom_name(source, 'amd64'), 'secretwright_' + expected + '_amd64.deb.spdx.json')
+                self.assertEqual(VERIFY.deb_name(source, 'arm64'), 'secretwright_' + source + '_arm64.deb')
+                self.assertEqual(VERIFY.deb_sbom_name(source, 'amd64'), 'secretwright_' + source + '_amd64.deb.spdx.json')
+
+    def test_release_asset_names_use_the_github_safe_semver_while_control_keeps_tilde(self):
+        for version in ('1.2.3', '1.2.3-rc.4', '0.0.0-snapshot.gabc123'):
+            for architecture in ('amd64', 'arm64'):
+                name = VERIFY.deb_name(version, architecture)
+                self.assertRegex(name, r'\A[A-Za-z0-9_.-]+\Z')
+                self.assertNotIn('~', name)
+                self.assertIn(version, name)
+        self.assertEqual(VERIFY.debian_version('1.2.3-rc.4'), '1.2.3~rc.4')
 
     def test_helpers_reject_invalid_versions_and_architectures(self):
         for version in ('v1.2.3', '01.2.3', '1.2.3-rc.01', '1.2.3/../../x', '', '1.2.3\n', '1.2.3-' + 'x' * 129):

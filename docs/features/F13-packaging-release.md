@@ -14,15 +14,15 @@ Para una versión `VERSION`, sin el prefijo `v` del tag:
 
 - `secretwright_VERSION_OS_ARCH.tar.gz` o `.zip`: los seis archivos comprimidos.
 - `secretwright_VERSION_OS_ARCH.spdx.json`: inventario SPDX de cada paquete, con identidad del producto y dependencias Go.
-- `secretwright_DEB_VERSION_ARCH.deb`: los dos paquetes Debian, con el mismo ejecutable Linux verificado en el archivo comprimido.
-- `secretwright_DEB_VERSION_ARCH.deb.spdx.json`: inventario SPDX de cada paquete Debian.
+- `secretwright_VERSION_ARCH.deb`: los dos paquetes Debian, con el mismo ejecutable Linux verificado en el archivo comprimido.
+- `secretwright_VERSION_ARCH.deb.spdx.json`: inventario SPDX de cada paquete Debian.
 - `secretwright_VERSION_linux_multiarch.oci.tar`: imagen OCI para Linux amd64 y arm64.
 - `secretwright_VERSION_linux_ARCH.image.spdx.json`: inventario de cada arquitectura de la imagen.
 - `secretwright_VERSION_checksums.txt`: SHA-256 de esos diecinueve archivos.
 - `secretwright_VERSION_checksums.sig`: firma Ed25519 del manifiesto completo.
 - `secretwright_VERSION_signing-key.pem`: clave pública correspondiente al firmante.
 
-El bundle contiene veintidós assets: diecinueve archivos cubiertos por el manifiesto, el propio manifiesto, su firma y la clave pública. `DEB_VERSION` convierte el primer guion de prerelease en `~`; por ejemplo, `0.1.0-rc.4` corresponde a `0.1.0~rc.4`, ordenada antes de la estable en Debian. Los inventarios conservan la identidad SemVer del producto.
+El bundle contiene veintidós assets: diecinueve archivos cubiertos por el manifiesto, el propio manifiesto, su firma y la clave pública. La versión interna Debian convierte el primer guion de prerelease en `~`; por ejemplo, `0.1.0-rc.4` corresponde a `0.1.0~rc.4`, ordenada antes de la estable en Debian. Los nombres descargables y los inventarios conservan la identidad SemVer del producto. Así los nombres subidos a GitHub no contienen `~`, que el servicio reemplaza por un punto.
 
 El verificador rechaza archivos ausentes o adicionales, symlinks, rutas inseguras y miembros duplicados en los paquetes. Comprueba las cabeceras ELF/Mach-O/PE, arquitectura, modo ejecutable Unix, inventarios y cobertura exacta del manifiesto. En Linux rechaza un intérprete dinámico y dependencias de bibliotecas compartidas. La imagen OCI debe contener exactamente las dos plataformas esperadas y sus blobs deben corresponder a sus digests.
 

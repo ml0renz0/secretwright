@@ -54,7 +54,7 @@ class DebianSmokeTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(prefix='secretwright-debian-smoke-test-')
         self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name); self.bundle=self.root/'bundle'; self.bundle.mkdir()
-        self.deb=self.bundle/'secretwright_0.1.0~rc.7_amd64.deb'; self.deb.write_bytes(b'fixture')
+        self.deb=self.bundle/'secretwright_0.1.0-rc.7_amd64.deb'; self.deb.write_bytes(b'fixture')
         binary=self.root/'docker'; binary.write_text(FAKE); binary.chmod(0o755)
         self.state_path=self.root/'state.json'; self.state={}
         self.env=dict(os.environ,PATH=str(self.root)+os.pathsep+os.environ.get('PATH',''),FAKE_DOCKER_STATE=str(self.state_path))

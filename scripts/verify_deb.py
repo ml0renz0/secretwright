@@ -46,7 +46,10 @@ def debian_version(version):
 
 def deb_name(version, architecture):
     require(architecture in ('amd64', 'arm64'))
-    return f'secretwright_{debian_version(version)}_{architecture}.deb'
+    debian_version(version)
+    # GitHub replaces '~' in uploaded asset names; Debian's control Version
+    # keeps its native ordering while the downloadable filename uses SemVer.
+    return f'secretwright_{version}_{architecture}.deb'
 
 
 def deb_sbom_name(version, architecture):
