@@ -1,0 +1,107 @@
+name: Clean up merged work branch
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cleanup:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'codex/work' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - name: Delete codex/work only if it still points at the merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          # BEGIN cleanup Python
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, fp, code, message, headers, new_url):
+                  return None
+
+
+          def main():
+              repository = os.environ["GITHUB_REPOSITORY"]
+              if (not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository)
+                      or repository.split("/")[1] in (".", "..")):
+                  raise ValueError("Invalid repository")
+              with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
+                  event = json.load(stream)
+              pr = event.get("pull_request") or {}
+              head = pr.get("head") or {}
+              if (os.environ.get("GITHUB_EVENT_NAME") != "pull_request"
+                      or event.get("action") != "closed"
+                      or pr.get("merged") is not True
+                      or (pr.get("base") or {}).get("ref") != "main"
+                      or head.get("ref") != "codex/work"
+                      or (head.get("repo") or {}).get("full_name") != repository
+                      or (event.get("repository") or {}).get("full_name") != repository):
+                  print("Skipping cleanup: this is not an eligible merged pull request.")
+                  return
+              sha = head.get("sha", "")
+              if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                  raise ValueError("Invalid head SHA")
+              token = os.environ["GH_TOKEN"]
+              if not token:
+                  raise ValueError("Missing Actions token")
+              opener = urllib.request.build_opener(NoRedirect())
+
+              def api(method, path):
+                  request = urllib.request.Request(
+                      "https://api.github.com/repos/" + repository + path,
+                      method=method,
+                      headers={"Authorization": "Bearer " + token,
+                               "Accept": "application/vnd.github+json",
+                               "X-GitHub-Api-Version": "2022-11-28"})
+                  try:
+                      with opener.open(request, timeout=10) as response:
+                          if response.status != (200 if method == "GET" else 204):
+                              raise ValueError("Unexpected API status")
+                          return json.load(response) if method == "GET" else True
+                  except urllib.error.HTTPError as error:
+                      if error.code == 404:
+                          error.close()
+                          return None
+                      raise
+
+              current = api("GET", "/git/ref/heads/codex/work")
+              if current is None:
+                  print("codex/work is already deleted.")
+                  return
+              if (current["ref"] != "refs/heads/codex/work"
+                      or current["object"]["type"] != "commit"):
+                  raise ValueError("Unexpected ref response")
+              if current["object"]["sha"] != sha:
+                  print("Preserving codex/work because its SHA has changed.")
+                  return
+              # GitHub's ref DELETE has no compare-and-swap operation. Check the
+              # SHA immediately before deletion, but this cannot close that race.
+              deleted = api("DELETE", "/git/refs/heads/codex/work")
+              print("Deleted codex/work." if deleted else "codex/work is already deleted.")
+
+
+          if __name__ == "__main__":
+              try:
+                  main()
+              except Exception:
+                  # API bodies, exception messages and credentials stay out of logs.
+                  raise SystemExit("Work branch cleanup failed.") from None
+          # END cleanup Python
+          PY

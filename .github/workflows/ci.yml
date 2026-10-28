@@ -4,6 +4,8 @@ on:
   push:
     branches-ignore:
       - main
+      # The reusable work branch is validated by pull_request events.
+      - codex/work
   pull_request:
   workflow_dispatch:
   workflow_call:
