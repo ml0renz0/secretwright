@@ -12,13 +12,17 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'scripts/debian_smoke.py'
 FAKE = r'''#!/usr/bin/env python3
 from pathlib import Path
-import json, os, sys
+import json, os, re, sys
 p=Path(os.environ['FAKE_DOCKER_STATE']); s=json.loads(p.read_text()); args=sys.argv[1:]
 if args[0].startswith('--host='): args=args[1:]
 s.setdefault('calls',[]).append(args)
 def done(code=0,output=''):
  p.write_text(json.dumps(s)); print(output,end=''); sys.exit(code)
-if args[0]=='build': done()
+if args[0]=='build':
+ text=(Path(args[-1])/'Dockerfile').read_text()
+ s['docs_include_paths']=re.findall(r"'path-include=([^']+)'",text)
+ s['docs_included']=set(s['docs_include_paths'])=={'/usr/share/doc/secretwright','/usr/share/doc/secretwright/*'}
+ done()
 if args[0]=='run': s['running']=True; done(output='c'*64+'\n')
 if args[:2]==['rm','--force']: s['running']=False; s['cleaned_container']=True; done()
 if args[:3]==['image','rm','--force']: s['cleaned_image']=True; done()
@@ -30,7 +34,7 @@ if args[0]=='exec':
  if words[:2]==['dpkg','--install']:
   s['installs']=s.get('installs',0)+1; s['installed']=True; done()
  if words[:2]==['dpkg','--purge']: s['installed']=False; s['purged']=True; done()
- if words[:2]==['dpkg','--verify']: done(output='changed\n' if s.get('bad_integrity') else '')
+ if words[:2]==['dpkg','--verify']: done(output='missing /usr/share/doc/secretwright/README.md\n' if not s.get('docs_included') else 'changed\n' if s.get('bad_integrity') else '')
  if words[:2]==['dpkg','--compare-versions']: done()
  if words[0]=='dpkg-query': done(output='secretwright\n'+('9.9.9' if s.get('bad_metadata') else '0.1.0~rc.7')+'\namd64\ninstall ok installed\n')
  if words[0]=='stat': done(output='0:0:755\n')
@@ -69,6 +73,13 @@ class DebianSmokeTests(unittest.TestCase):
         run=next(c for c in self.state['calls'] if c[0]=='run')
         self.assertIn('none',run); self.assertTrue(any('readonly' in value for value in run))
         report=json.loads(result.stdout); self.assertEqual(report['debian_version'],'0.1.0~rc.7'); self.assertTrue(report['purged'])
+
+    def test_debian_slim_doc_exclusion_is_overridden_only_for_package_docs(self):
+        result=self.invoke(); self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(set(self.state['docs_include_paths']),
+                         {'/usr/share/doc/secretwright','/usr/share/doc/secretwright/*'})
+        self.assertTrue(self.state['docs_included'])
+        self.assertEqual(self.state['installs'],2)
 
     def test_wrong_installed_metadata_is_rejected_and_cleaned(self):
         self.state['bad_metadata']=True

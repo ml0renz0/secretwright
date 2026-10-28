@@ -16,7 +16,11 @@ import uuid
 STAGE = 'inputs'
 MAX_OUTPUT = 4 << 20
 DOCKERFILE = '''FROM debian:13-slim
-RUN apt-get update \\
+RUN printf '%s\\n' \\
+        'path-include=/usr/share/doc/secretwright' \\
+        'path-include=/usr/share/doc/secretwright/*' \\
+        > /etc/dpkg/dpkg.cfg.d/zz-secretwright-acceptance \\
+    && apt-get update \\
     && apt-get install -y --no-install-recommends ca-certificates \\
     && rm -rf /var/lib/apt/lists/*
 '''
