@@ -118,6 +118,29 @@ jobs:
           VAULT_TEST_REQUIRE_DATABASE: '1'
         run: make integration-local
 
+  playground:
+    name: Seeded Vault playground acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Test playground isolation and provisioning
+        run: make playground-test
+      - name: Build the CLI
+        run: make build
+      - name: Provision, explore, reuse and reset a real Vault
+        run: python3 scripts/playground_smoke.py
+      - name: Remove the disposable playground
+        if: always()
+        run: python3 scripts/playground.py down
+
   packaging:
     name: Release archives, signatures and container acceptance
     runs-on: ubuntu-24.04
