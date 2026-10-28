@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 
@@ -343,6 +344,40 @@ class ReleasePublicationTests(unittest.TestCase):
         self.planned = dict(mode=mode, tag='v' + version, version=version, sha=self.sha,
                             candidate=candidate, control_sha=control)
         return self.planned
+
+    def record_workflow_plan(self, outputs):
+        workflow = (ROOT / '.github/workflows/release.yml').read_text()
+        step = workflow.split('      - name: Record the validated plan without shell interpolation\n', 1)[1]
+        step = step.split('\n      - name:', 1)[0]
+        script = textwrap.dedent(step.split('        run: |\n', 1)[1])
+        result = subprocess.run(
+            ['bash', '-euo', 'pipefail', '-c', script], cwd=self.root,
+            env=dict(self.environment, RELEASE_PLAN=json.dumps(outputs)),
+            capture_output=True, check=False, text=True,
+        )
+        self.assertEqual(result.returncode, 0, 'the actual workflow could not record its plan')
+        self.assertFalse(result.stdout + result.stderr, 'recording the plan printed unexpected diagnostics')
+        return json.loads((self.runner / 'secretwright-release-plan.json').read_text())
+
+    def test_workflow_records_dropped_empty_candidate_and_publishes_automatic_rc(self):
+        expected = dict(self.automatic_plan())
+        # Actions drops empty job outputs before constructing needs.plan.outputs.
+        outputs = {name: value for name, value in expected.items() if value}
+        self.assertNotIn('candidate', outputs)
+        self.planned = self.record_workflow_plan(outputs)
+        self.assertEqual(self.invoke().returncode, 0, 'the workflow plan could not publish its RC')
+        self.assertEqual(self.planned, expected)
+        self.assertEqual(self.state['tag_create_count'], 1)
+        self.assertTrue(self.state['published'])
+        self.assertEqual(len(self.state['uploaded']), 18)
+
+    def test_workflow_does_not_restore_a_missing_required_source_output(self):
+        outputs = {name: value for name, value in self.automatic_plan().items() if value}
+        outputs.pop('sha')
+        self.planned = self.record_workflow_plan(outputs)
+        self.assertNotIn('sha', self.planned)
+        self.rejected()
+        self.assertFalse(self.state.get('calls'), 'an incomplete workflow plan reached GitHub')
 
     def test_main_merge_creates_exact_tag_only_after_signing_and_publishes_rc(self):
         self.automatic_plan()
