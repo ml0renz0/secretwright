@@ -49,28 +49,36 @@ jobs:
               return tag, data[cursor:end], end
           
           
+          class EnvelopeError(Exception):
+              pass
+          
+          
           def envelope(key):
               if len(key.encode()) > 65536:
-                  raise ValueError()
+                  raise EnvelopeError('el PEM supera el limite de tamano')
               if not key.splitlines() or key.splitlines()[0] != '-----BEGIN ENCRYPTED PRIVATE KEY-----':
-                  raise ValueError()
+                  raise EnvelopeError('la primera linea no es BEGIN ENCRYPTED PRIVATE KEY exacta')
               lines = key.strip().splitlines()
-              if len(lines) < 3 or lines[0] != '-----BEGIN ENCRYPTED PRIVATE KEY-----' or lines[-1] != '-----END ENCRYPTED PRIVATE KEY-----':
-                  raise ValueError()
-              der = base64.b64decode(''.join(lines[1:-1]), validate=True)
+              if len(lines) < 3 or lines[-1] != '-----END ENCRYPTED PRIVATE KEY-----':
+                  raise EnvelopeError('falta el cierre END ENCRYPTED PRIVATE KEY exacto, o faltan lineas')
+              try:
+                  body = ''.join(lines[1:-1]).translate({ord(char): None for char in ' \t\r\n'})
+                  der = base64.b64decode(body, validate=True)
+              except Exception:
+                  raise EnvelopeError('el cuerpo no es Base64 valido') from None
               tag, body, end = tlv(der)
               if tag != 48 or end != len(der):
-                  raise ValueError()
+                  raise EnvelopeError('la secuencia DER principal es incorrecta o tiene datos adicionales')
               algorithm_tag, algorithm, cursor = tlv(body)
               cipher_tag, cipher, end = tlv(body, cursor)
               oid_tag, oid, parameters = tlv(algorithm)
               if algorithm_tag != 48 or cipher_tag != 4 or not cipher or end != len(body) or oid_tag != 6 or parameters >= len(algorithm):
-                  raise ValueError()
+                  raise EnvelopeError('la estructura DER no es EncryptedPrivateKeyInfo PKCS#8')
               # OpenSSL validates the complete ASN.1; its dump is captured and never logged.
               syntax = subprocess.run(['openssl', 'asn1parse', '-inform', 'DER'], input=der,
                                       env={'PATH': os.defpath}, capture_output=True, check=False, timeout=30)
               if syntax.returncode:
-                  raise ValueError()
+                  raise EnvelopeError('OpenSSL rechaza la sintaxis ASN.1')
               return oid == bytes.fromhex('2a864886f70d01050d')
           
           
@@ -99,8 +107,9 @@ jobs:
               print('Estas observaciones no acreditan aleatoriedad ni fortaleza de la password.')
               try:
                   pbes2 = envelope(key)
-              except Exception:
-                  print('FAIL: el PEM no tiene una envoltura PKCS#8 cifrada valida (cabeceras, Base64 y ASN.1).')
+              except Exception as error:
+                  reason = str(error) if isinstance(error, EnvelopeError) else 'DER truncado o con longitudes ASN.1 incorrectas'
+                  print('FAIL: PEM guardado incorrecto: ' + reason + '.')
                   observe('PEM contiene saltos de linea escritos como barra-n', '\\n' in key)
                   return 1
               print('PEM: cabeceras, Base64 y estructura ASN.1 de PKCS#8 cifrado correctas.')
