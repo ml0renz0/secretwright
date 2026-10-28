@@ -1,0 +1,64 @@
+name: Validate stored release signing secrets
+
+on:
+  push:
+    branches:
+      - codex/validate-release-signing
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Check the stored PEM and password without publishing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Validate the actual Actions secrets offline
+        env:
+          SECRETWRIGHT_SIGNING_KEY: ${{ secrets.SECRETWRIGHT_SIGNING_KEY }}
+          SECRETWRIGHT_SIGNING_PASSWORD: ${{ secrets.SECRETWRIGHT_SIGNING_PASSWORD }}
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib
+          import os
+          import subprocess
+          import sys
+          
+          
+          def main():
+              key = os.environ.get('SECRETWRIGHT_SIGNING_KEY', '')
+              password = os.environ.get('SECRETWRIGHT_SIGNING_PASSWORD', '')
+              missing = [name for name in ('SECRETWRIGHT_SIGNING_KEY', 'SECRETWRIGHT_SIGNING_PASSWORD')
+                         if not os.environ.get(name)]
+              if missing:
+                  print('FAIL: missing Actions secret: ' + ', '.join(missing))
+                  return 1
+              if len(key.encode()) > 65536 or not key.startswith('-----BEGIN ENCRYPTED PRIVATE KEY-----'):
+                  print('FAIL: SECRETWRIGHT_SIGNING_KEY must contain an encrypted PKCS#8 PEM.')
+                  return 1
+              selected = {'PATH': os.defpath, 'SECRETWRIGHT_SIGNING_PASSWORD': password}
+              check = subprocess.run(['openssl', 'pkey', '-passin', 'env:SECRETWRIGHT_SIGNING_PASSWORD',
+                                      '-check', '-noout'], input=key.encode(), env=selected,
+                                     capture_output=True, check=False, timeout=30)
+              if check.returncode:
+                  print('FAIL: the stored password cannot validate the stored PEM; check the password and PEM contents.')
+                  return 1
+              public = subprocess.run(['openssl', 'pkey', '-passin', 'env:SECRETWRIGHT_SIGNING_PASSWORD',
+                                       '-pubout', '-outform', 'DER'], input=key.encode(), env=selected,
+                                      capture_output=True, check=False, timeout=30)
+              if public.returncode or len(public.stdout) != 44 or public.stdout[:12] != bytes.fromhex('302a300506032b6570032100'):
+                  print('FAIL: the stored PEM is not a valid Ed25519 signing key.')
+                  return 1
+              print('PASS: the stored Actions password opens and validates the stored encrypted Ed25519 PEM.')
+              print('Public key SHA-256 (DER): ' + hashlib.sha256(public.stdout).hexdigest())
+              return 0
+          
+          
+          if __name__ == '__main__':
+              try:
+                  status = main()
+              except Exception:
+                  print('FAIL: signing secret validation could not complete.')
+                  status = 1
+              sys.exit(status)
+          PYTHON
