@@ -22,7 +22,6 @@ jobs:
           import base64
           import hashlib
           import os
-          import re
           import subprocess
           import sys
           
@@ -52,6 +51,8 @@ jobs:
           
           def envelope(key):
               if len(key.encode()) > 65536:
+                  raise ValueError()
+              if not key.splitlines() or key.splitlines()[0] != '-----BEGIN ENCRYPTED PRIVATE KEY-----':
                   raise ValueError()
               lines = key.strip().splitlines()
               if len(lines) < 3 or lines[0] != '-----BEGIN ENCRYPTED PRIVATE KEY-----' or lines[-1] != '-----END ENCRYPTED PRIVATE KEY-----':
