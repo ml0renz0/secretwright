@@ -49,11 +49,20 @@ def load_verifier():
 
 def expected_assets(version):
     names = set()
+    spec = importlib.util.spec_from_file_location('secretwright_publish_deb', SCRIPTS / 'verify_deb.py')
+    if spec is None or spec.loader is None:
+        fail()
+    debian = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = debian
+    spec.loader.exec_module(debian)
     for system in ('linux', 'darwin', 'windows'):
         for machine in ('amd64', 'arm64'):
             prefix = f'secretwright_{version}_{system}_{machine}'
             names.add(prefix + ('.zip' if system == 'windows' else '.tar.gz'))
             names.add(prefix + '.spdx.json')
+    for machine in ('amd64', 'arm64'):
+        names.add(debian.deb_name(version, machine))
+        names.add(debian.deb_sbom_name(version, machine))
     names.add(f'secretwright_{version}_linux_multiarch.oci.tar')
     for machine in ('amd64', 'arm64'):
         names.add(f'secretwright_{version}_linux_{machine}.image.spdx.json')
@@ -360,7 +369,7 @@ def publish(root, environment, *, planned=None):
             create_remote_tag(repository, tag, sha, cwd=root, environment=gh_environment)
         require_remote_tag(repository, tag, sha, cwd=root, environment=gh_environment)
         prerelease = '-' in version.split('+', 1)[0]
-        notes = ('Contains six platform archives, SPDX SBOMs, a Linux multiarch OCI image and a signed SHA-256 manifest. '
+        notes = ('Contains Debian packages for amd64 and arm64, six platform archives, SPDX SBOMs, a Linux multiarch OCI image and a signed SHA-256 manifest. '
                  'Verify the manifest signature with an independently trusted Ed25519 public key before checking every asset. '
                  'Linux amd64 runtime is tested; other native platforms are cross-built and inspected. '
                  'Windows private-file commands remain experimental because POSIX 0600/0700 checks do not establish Windows ACLs.')

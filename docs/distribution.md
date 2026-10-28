@@ -2,9 +2,9 @@
 
 El repositorio y sus releases pueden ser privados. Los ejemplos con `gh` requieren una sesión con acceso al repositorio. Sustituye `VERSION` por una versión publicada; los snapshots de Actions son artefactos temporales de CI.
 
-## Binario
+## Binario comprimido
 
-Cada release ofrece Linux, macOS y Windows para amd64 y arm64. Descarga el paquete correspondiente y su manifiesto firmado:
+Las releases ofrecen archivos `.tar.gz` para Linux y macOS, y `.zip` para Windows, en amd64 y arm64. Para Debian también se publican [paquetes `.deb`](#debian). Descarga el archivo correspondiente y su manifiesto firmado:
 
 ```bash
 VERSION=1.0.0
@@ -34,6 +34,59 @@ tar -xzf "secretwright_${VERSION}_linux_amd64.tar.gz"
 En macOS usa la herramienta SHA-256 equivalente disponible; para Windows extrae el ZIP y ejecuta `secretwright.exe`. Las funciones que exigen permisos POSIX privados siguen siendo experimentales en Windows: el paquete no acredita soporte de ACL Windows.
 
 El binario no requiere un runtime Go ni Kerberos. La conexión HTTPS usa las CA del sistema y permite configurar una CA privada mediante `VAULT_CACERT`. Los ejemplos de configuración generados usan YAML por defecto y admiten JSON explícito.
+
+## Debian
+
+Los paquetes `.deb` se publican para `amd64` y `arm64` entre los **Assets** de las nuevas releases. Las candidatas `v0.1.0-rc.2` y `v0.1.0-rc.3`, publicadas antes de incorporar este formato, no incluyen `.deb`.
+
+El nombre del paquete es `secretwright_DEB_VERSION_ARCH.deb`, acompañado de `secretwright_DEB_VERSION_ARCH.deb.spdx.json`. En Debian, la versión `0.1.0-rc.N` se representa como `0.1.0~rc.N`: el carácter `~` hace que la candidata ordene antes que `0.1.0`. El ejecutable conserva la versión SemVer original.
+
+Elige una release que incluya los `.deb` y una clave pública confiable, guardada como `trusted-release-key.pem`. Este bloque Bash descarga el paquete para la arquitectura de Debian, verifica firma y checksum y se detiene si falla cualquier comprobación antes de instalar:
+
+```bash
+(
+  set -euo pipefail
+  VERSION=1.0.0
+  VERSION_CORE="${VERSION%%+*}"
+  DEB_VERSION="${VERSION_CORE/-/\~}${VERSION#"$VERSION_CORE"}"
+  ARCH=$(dpkg --print-architecture)
+  case "$ARCH" in
+    amd64|arm64) ;;
+    *) printf '%s\n' 'Arquitectura Debian no disponible.' >&2; exit 1 ;;
+  esac
+  DEB="secretwright_${DEB_VERSION}_${ARCH}.deb"
+  gh release download "v$VERSION" --repo ml0renz0/secretwright \
+    --pattern "$DEB" \
+    --pattern "secretwright_${VERSION}_checksums.txt" \
+    --pattern "secretwright_${VERSION}_checksums.sig" \
+    --pattern "secretwright_${VERSION}_signing-key.pem"
+  openssl pkeyutl -verify -pubin -rawin \
+    -inkey trusted-release-key.pem \
+    -in "secretwright_${VERSION}_checksums.txt" \
+    -sigfile "secretwright_${VERSION}_checksums.sig"
+  sha256sum --check --ignore-missing "secretwright_${VERSION}_checksums.txt"
+  sudo apt install "./$DEB"
+  secretwright version
+)
+```
+
+Sustituye `VERSION` por la versión publicada elegida; el bloque convierte también las prereleases. El repositorio es privado y `gh` necesita una sesión con acceso. La instalación usa el archivo local descargado; todavía no se publica un repositorio APT.
+
+El paquete instala `/usr/bin/secretwright` y la documentación en `/usr/share/doc/secretwright/`, con `README.md` y `copyright`. Declara la dependencia `ca-certificates` para las conexiones HTTPS. No instala servicios ni crea archivos de configuración o secretos.
+
+Para desinstalar:
+
+```bash
+sudo apt remove secretwright
+```
+
+Para purgar el paquete:
+
+```bash
+sudo apt purge secretwright
+```
+
+La CI comprueba instalación, reinstalación, comandos offline, integridad y purga en Debian 13 amd64. El paquete arm64 se comprueba por estructura, metadatos y arquitectura del ejecutable; no se acredita ejecución nativa en arm64.
 
 ## Contenedor Linux
 
@@ -150,7 +203,7 @@ promote_candidate: null
 
 Configura ambos secretos antes de integrar la preparación en `main`. Cada merge que mantiene la promoción sin cambios activa `Release`: selecciona el commit integrado, ejecuta la CI completa y genera `v0.1.0-rc.N`. `N` es `GITHUB_RUN_NUMBER` del workflow, por lo que puede haber saltos y la primera publicación no tiene por qué terminar en `rc.1`.
 
-El mismo flujo valida el bundle, comprueba la clave de firma fuera de línea y crea el tag y la release. La candidata aparece como prerelease y no se marca como latest. Comprueba los dieciocho assets y la firma con la clave pública conservada.
+El mismo flujo valida el bundle, comprueba la clave de firma fuera de línea y crea el tag y la release. La candidata aparece como prerelease y no se marca como latest. Comprueba los veintidós assets y la firma con la clave pública conservada.
 
 El workflow se activa con pushes a `main`; subir un tag manual no inicia una publicación. El coordinador ejecuta la CI y la publicación directamente y crea el tag al finalizar las comprobaciones. Así no depende de encadenar otro workflow desde un tag creado con `GITHUB_TOKEN`.
 

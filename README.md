@@ -6,7 +6,7 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 ## Estado del proyecto
 
-**F00–F13 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases, certificados X.509/PKI, keytabs y distribución firmada. La primera candidata de `0.1.0` está en preparación: [notas y alcance](docs/releases/v0.1.0-rc.1.md). El [flujo de releases](docs/features/TBD-releases.md) genera una RC al integrar cambios en `main` y publica la estable al integrar una PR de promoción. La [guía de distribución](docs/distribution.md) explica la configuración inicial de firma.
+**F00–F13 están integradas**: conexión, KV v1/v2, shell, backup/restore, accesos, blueprints, templates, reconciliación, rotación, TTL/leases, certificados X.509/PKI, keytabs y distribución firmada. Las candidatas de `0.1.0` se publican en [Releases](https://github.com/ml0renz0/secretwright/releases): [notas y alcance](docs/releases/v0.1.0-rc.1.md). El [flujo de releases](docs/features/TBD-releases.md) genera una RC al integrar cambios en `main` y publica la estable al integrar una PR de promoción. La [guía de distribución](docs/distribution.md) explica la verificación de firmas y la instalación, incluidos los [paquetes Debian `.deb`](docs/distribution.md#debian) para amd64 y arm64.
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
