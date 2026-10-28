@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -49,6 +50,46 @@ def archive_name(version, system, architecture):
     return f'secretwright_{version}_{system}_{architecture}.{extension}'
 
 
+def debian_policy():
+    spec = importlib.util.spec_from_file_location('secretwright_package_debian', ROOT / 'scripts' / 'verify_deb.py')
+    require(spec is not None and spec.loader is not None, 'Debian package policy is unavailable')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def debian_assets(version):
+    module = debian_policy()
+    return [(architecture, module.deb_name(version, architecture), module.deb_sbom_name(version, architecture))
+            for architecture in ('amd64', 'arm64')]
+
+
+def debian_sboms(directory, version, environment):
+    global STAGE
+    policy = debian_policy()
+    for architecture, name, sbom in debian_assets(version):
+        STAGE = 'debian-installed-payload-spdx-' + architecture
+        source = directory / name
+        require(source.is_file() and not source.is_symlink() and 0 < source.stat().st_size <= (128 << 20),
+                'Debian package is unavailable')
+        with source.open('rb') as selected:
+            body = selected.read((128 << 20) + 1)
+        policy.verify_deb(body, version, architecture)
+        with tempfile.TemporaryDirectory(prefix='secretwright-debian-sbom-') as temporary:
+            temporary = Path(temporary)
+            # Extract only the immutable bytes already checked by the strict
+            # package parser. Scan its actual installed tree, including Go ELF
+            # dependency metadata, rather than only the outer Debian control.
+            package = temporary / 'verified.deb'
+            package.write_bytes(body)
+            tree = temporary / 'installed'
+            tree.mkdir()
+            command(['dpkg-deb', '--extract', str(package), str(tree)], environment=environment)
+            command(['syft', 'scan', 'dir:' + str(tree), '--enrich=-all', '--source-name', 'secretwright',
+                     '--source-version', version, '--output', 'spdx-json=' + str(directory / sbom)],
+                    environment=environment, capture=False)
+
+
 def package_version(environment):
     sha = command(['git', 'rev-parse', 'HEAD']).decode().strip()
     require(re.fullmatch('[0-9a-f]{40}', sha) is not None, 'invalid source commit')
@@ -80,12 +121,30 @@ def write_manifest(directory, version, containers):
     for system, architecture in PLATFORMS:
         names.extend([archive_name(version, system, architecture),
                       f'secretwright_{version}_{system}_{architecture}.spdx.json'])
+    for _, package, sbom in debian_assets(version):
+        names.extend([package, sbom])
     if containers:
         names.append(f'secretwright_{version}_linux_multiarch.oci.tar')
         names.extend(f'secretwright_{version}_linux_{architecture}.image.spdx.json'
                      for architecture in ('amd64', 'arm64'))
     body = ''.join(f'{digest(directory / name)}  {name}\n' for name in sorted(names))
     (directory / f'secretwright_{version}_checksums.txt').write_text(body, encoding='ascii')
+
+
+def build_debian_packages(directory, second_build, version, environment):
+    global STAGE
+    timestamp = command(['git', 'show', '-s', '--format=%ct', 'HEAD']).decode().strip()
+    require(re.fullmatch(r'0|[1-9][0-9]{0,9}', timestamp) is not None, 'invalid package timestamp')
+    with tempfile.TemporaryDirectory(prefix='secretwright-deb-reproducibility-') as temporary:
+        for architecture, name, _ in debian_assets(version):
+            STAGE = 'debian-build-and-reproducibility-' + architecture
+            for source_directory, destination in [(directory, directory / name),
+                                                  (second_build, Path(temporary) / name)]:
+                command([sys.executable, str(ROOT / 'scripts' / 'build_deb.py'),
+                         str(source_directory / archive_name(version, 'linux', architecture)), str(destination),
+                         '--version', version, '--arch', architecture, '--epoch', timestamp], environment=environment)
+            require(digest(directory / name) == digest(Path(temporary) / name),
+                    'Debian package build is not byte reproducible')
 
 
 def native_archive_checks(directory, version, environment):
@@ -217,6 +276,7 @@ def main():
         name = archive_name(version, system, architecture)
         require(digest(work / name) == digest(directory / name),
                 'archive build is not byte reproducible')
+    build_debian_packages(directory, work, version, environment)
     shutil.rmtree(work)
     STAGE = 'archive-spdx-and-complete-checksums'
     for system, architecture in PLATFORMS:
@@ -226,10 +286,14 @@ def main():
         command(['syft', 'scan', str(source), '--enrich=-all', '--source-name', 'secretwright',
                  '--source-version', version, '--output', 'spdx-json=' + str(destination)],
                 environment=environment, capture=False)
+    debian_sboms(directory, version, environment)
     write_manifest(directory, version, False)
     command([sys.executable, str(ROOT / 'scripts' / 'verify_release.py'), str(directory),
              '--version', version, '--without-containers'], environment=environment)
     native_archive_checks(directory, version, environment)
+    STAGE = 'native-debian-install-reinstall-and-purge'
+    command([sys.executable, str(ROOT / 'scripts' / 'debian_smoke.py'), str(directory),
+             '--version', version], environment=environment, capture=False)
     STAGE = 'multiarch-container-and-spdx'
     command(['bash', str(ROOT / 'scripts' / 'build_container.sh'), str(directory), version],
             environment=environment, capture=False)
@@ -250,9 +314,10 @@ def main():
     STAGE = 'final-complete-bundle'
     command([sys.executable, str(ROOT / 'scripts' / 'verify_release.py'),
              str(directory), '--version', version], environment=environment)
-    require(len(list(directory.iterdir())) == 18, 'unexpected distribution output')
-    print(json.dumps({'version': version, 'archives': 6, 'sboms': 8, 'oci_images': 2,
-                      'files': 18, 'archive_reproducibility_checked': True,
+    require(len(list(directory.iterdir())) == 22, 'unexpected distribution output')
+    print(json.dumps({'version': version, 'archives': 6, 'debian_packages': 2, 'sboms': 10, 'oci_images': 2,
+                      'files': 22, 'archive_reproducibility_checked': True,
+                      'debian_reproducibility_checked': True, 'native_debian_runtime': 'linux/amd64',
                       'native_runtime': 'linux/amd64', 'published': False}))
 
 

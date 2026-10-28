@@ -109,10 +109,48 @@ def spdx_fixture(version=VERSION):
 
 def rewrite_manifest(directory, version=VERSION):
     assets = [path for path in directory.iterdir() if path.is_file() and
-              (path.name.endswith((".tar.gz", ".zip", ".spdx.json", ".oci.tar")))]
+              (path.name.endswith((".tar.gz", ".zip", ".spdx.json", ".oci.tar", ".deb")))]
     lines = [f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in sorted(assets)]
     destination = directory / f"secretwright_{version}_checksums.txt"
     destination.write_text("".join(lines), encoding="ascii")
+    return destination
+
+
+def write_deb(directory, machine, version=VERSION, binary=None):
+    debian = VERIFY.debian_verifier()
+    payload = {
+        'usr/bin/secretwright': (binary if binary is not None else binary_fixture('linux', machine), 0o755),
+        'usr/share/doc/secretwright/README.md': (b'# Secretwright\n', 0o644),
+        'usr/share/doc/secretwright/copyright': (b'MIT License\nCopyright Secretwright contributors\n', 0o644),
+    }
+    destination = directory / debian.deb_name(version, machine)
+    with tempfile.TemporaryDirectory(prefix='secretwright-deb-fixture-') as temporary:
+        stage = Path(temporary) / 'root'
+        control = stage / 'DEBIAN'
+        control.mkdir(parents=True)
+        for name, (body, mode) in payload.items():
+            path = stage / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+            path.chmod(mode)
+        for path in stage.rglob('*'):
+            if path.is_dir():
+                path.chmod(0o755)
+        stage.chmod(0o755)
+        (control / 'control').write_text(
+            'Package: secretwright\nVersion: ' + debian.debian_version(version)
+            + '\nArchitecture: ' + machine
+            + '\nMaintainer: Fixture <fixture@example.test>\nDepends: ca-certificates\n'
+              'Installed-Size: 1\nDescription: Secretwright fixture\n', encoding='ascii')
+        (control / 'md5sums').write_text(''.join(
+            hashlib.md5(body, usedforsecurity=False).hexdigest() + '  ' + name + '\n'
+            for name, (body, _) in sorted(payload.items())), encoding='ascii')
+        for path in control.iterdir():
+            path.chmod(0o644)
+        subprocess.run(['dpkg-deb', '--root-owner-group', '-Zgzip', '--uniform-compression',
+                        '--build', str(stage), str(destination)],
+                       env=dict(os.environ, SOURCE_DATE_EPOCH='0'),
+                       capture_output=True, check=True)
     return destination
 
 
@@ -120,6 +158,10 @@ def write_bundle(directory, version=VERSION):
     for system, machine in PLATFORMS:
         write_archive(directory, system, machine, version=version)
         (directory / sbom_name(system, machine, version)).write_text(json.dumps(spdx_fixture(version)))
+    debian = VERIFY.debian_verifier()
+    for machine in ('amd64', 'arm64'):
+        write_deb(directory, machine, version)
+        (directory / debian.deb_sbom_name(version, machine)).write_text(json.dumps(spdx_fixture(version)))
     return rewrite_manifest(directory, version)
 
 
@@ -150,8 +192,26 @@ class ReleaseVerificationTests(unittest.TestCase):
         summary = self.verify()
         self.assertIsInstance(summary, dict)
         self.assertEqual(summary.get("version"), VERSION)
-        self.assertEqual(len(self.manifest.read_text().splitlines()), 12)
+        self.assertEqual(len(self.manifest.read_text().splitlines()), 16)
+        self.assertEqual(summary['debian_packages'], 2)
         self.assertNotIn(str(self.directory), json.dumps(summary))
+
+    def test_debian_packages_are_required_and_match_the_linux_archive(self):
+        module = VERIFY.debian_verifier()
+        (self.directory / module.deb_name(VERSION, 'arm64')).unlink()
+        rewrite_manifest(self.directory)
+        self.rejected()
+
+    def test_debian_executable_cannot_differ_even_when_its_checksum_is_valid(self):
+        binary = binary_fixture('linux', 'amd64')[:-1] + b'X'
+        write_deb(self.directory, 'amd64', binary=binary)
+        rewrite_manifest(self.directory)
+        self.rejected()
+
+    def test_debian_elf_architecture_must_match_the_control_field(self):
+        write_deb(self.directory, 'amd64', binary=binary_fixture('linux', 'arm64'))
+        rewrite_manifest(self.directory)
+        self.rejected()
 
     def test_prerelease_version_is_supported_without_v_prefix(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -170,7 +230,7 @@ class ReleaseVerificationTests(unittest.TestCase):
     def test_default_final_bundle_requires_container_assets(self):
         self.rejected(containers=True)
 
-    def test_final_bundle_has_fifteen_manifest_covered_assets(self):
+    def test_final_bundle_has_nineteen_manifest_covered_assets(self):
         spec = importlib.util.spec_from_file_location("release_oci_fixture", Path(__file__).with_name("test_oci.py"))
         fixture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fixture)
@@ -180,7 +240,7 @@ class ReleaseVerificationTests(unittest.TestCase):
         rewrite_manifest(self.directory)
         summary = VERIFY.verify_release(self.directory, VERSION)
         self.assertEqual(summary.get("version"), VERSION)
-        self.assertEqual(len(self.manifest.read_text().splitlines()), 15)
+        self.assertEqual(len(self.manifest.read_text().splitlines()), 19)
         (self.directory / sbom_name("linux", "arm64", image=True)).unlink()
         self.rejected(containers=True)
 

@@ -25,7 +25,7 @@ MAX_OCI = 512 << 20
 MAX_MANIFEST = 64 << 10
 PLATFORMS = tuple((system, machine) for system in ("linux", "darwin", "windows") for machine in ("amd64", "arm64"))
 SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\Z")
-MANIFEST_LINE = re.compile(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9_.+-]*)\Z")
+MANIFEST_LINE = re.compile(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9_.+~-]*)\Z")
 
 
 class VerificationError(Exception):
@@ -201,8 +201,10 @@ def verify_archive(body, system, machine):
     executable = "secretwright.exe" if system == "windows" else "secretwright"
     allowed = {executable, "README.md", "LICENSE"}
     seen = set()
+    executable_body = None
 
     def member(name, mode, size, source):
+        nonlocal executable_body
         if name not in allowed or name in seen or size <= 0 or size > (MAX_BINARY if name == executable else MAX_DOCUMENT):
             fail("invalid release archive contents")
         if system != "windows" and mode != (0o755 if name == executable else 0o644):
@@ -213,6 +215,7 @@ def verify_archive(body, system, machine):
             fail("invalid release archive contents")
         if name == executable:
             verify_executable(content, system, machine)
+            executable_body = content
 
     if system == "windows":
         # Bound central-directory object allocation before ZipFile parses it.
@@ -241,6 +244,17 @@ def verify_archive(body, system, machine):
                     member(item.name, item.mode, item.size, source)
     if seen != allowed:
         fail("invalid release archive contents")
+    return executable_body
+
+
+def debian_verifier():
+    spec = importlib.util.spec_from_file_location("secretwright_verify_deb", Path(__file__).with_name("verify_deb.py"))
+    if spec is None or spec.loader is None:
+        fail("Debian package verifier is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def container_verifier(path, version):
@@ -263,10 +277,14 @@ def _verify_release(directory, version, containers):
     if not stat.S_ISDIR(directory.lstat().st_mode):
         fail("release bundle directory is unavailable")
     expected = {}
+    debian = debian_verifier()
     for system, machine in PLATFORMS:
         prefix = f"secretwright_{version}_{system}_{machine}"
         expected[prefix + (".zip" if system == "windows" else ".tar.gz")] = ("archive", system, machine)
         expected[prefix + ".spdx.json"] = ("sbom", system, machine)
+    for machine in ("amd64", "arm64"):
+        expected[debian.deb_name(version, machine)] = ("deb", "linux", machine)
+        expected[debian.deb_sbom_name(version, machine)] = ("sbom", "linux", machine)
     if containers:
         expected[f"secretwright_{version}_linux_multiarch.oci.tar"] = ("oci", "linux", "multiarch")
         for machine in ("amd64", "arm64"):
@@ -281,6 +299,7 @@ def _verify_release(directory, version, containers):
     if actual - (set(expected) | {manifest_name} | optional) or not (set(expected) | {manifest_name}) <= actual:
         fail("release bundle has missing or unexpected assets")
     proof = {}
+    linux_binaries, debian_binaries = {}, {}
     for name in actual & optional:
         proof[name] = evidence(directory / name, 16 << 10)
     manifest, proof[manifest_name] = read_regular(directory / manifest_name, MAX_MANIFEST)
@@ -300,16 +319,27 @@ def _verify_release(directory, version, containers):
                 fail("release artifact checksum mismatch")
             container_verifier(directory / name, version)
         else:
-            body, proof[name] = read_regular(directory / name, MAX_ARCHIVE if category == "archive" else MAX_SBOM)
+            body, proof[name] = read_regular(directory / name, MAX_ARCHIVE if category in ("archive", "deb") else MAX_SBOM)
             if hashlib.sha256(body).hexdigest() != digest:
                 fail("release artifact checksum mismatch")
             if category == "archive":
-                verify_archive(body, system, machine)
+                binary = verify_archive(body, system, machine)
+                if system == "linux":
+                    linux_binaries[machine] = hashlib.sha256(binary).hexdigest()
+            elif category == "deb":
+                try:
+                    binary = debian.verify_deb(body, version, machine)
+                except debian.VerificationError:
+                    fail("invalid release Debian package")
+                verify_elf(binary, machine)
+                debian_binaries[machine] = hashlib.sha256(binary).hexdigest()
             else:
                 verify_sbom(body, version)
+    if debian_binaries != linux_binaries:
+        fail("Debian package executable differs from its Linux archive")
     if any(not unchanged(info, (directory / name).lstat()) for name, info in proof.items()):
         fail("release assets changed during verification")
-    return {"version": version, "archives": 6, "sboms": 8 if containers else 6,
+    return {"version": version, "archives": 6, "debian_packages": 2, "sboms": 10 if containers else 8,
             "artifacts": len(expected), "containers": containers,
             "platforms": [f"{system}/{machine}" for system, machine in PLATFORMS]}
 

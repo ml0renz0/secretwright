@@ -47,7 +47,7 @@ En los merges posteriores se conserva `promote_candidate: v0.1.0-rc.4`. Al no ca
 
 Las claves de producción solo se entregan al job de publicación mediante `SECRETWRIGHT_SIGNING_KEY` y `SECRETWRIGHT_SIGNING_PASSWORD`. Primero se comprueban el bundle y la clave y se firma y verifica fuera de línea. Si faltan los secretos o la clave no sirve, no se crea el tag remoto ni la release.
 
-El publicador exige que el tag y la release de destino no existan. Crea el tag con el commit validado, sube los dieciocho assets a un borrador y verifica sus nombres, tamaños y SHA-256 antes de publicarlo. Vuelve a comprobar el tag antes de publicar. En una promoción también comprueba que la candidata publicada sigue apuntando al commit seleccionado.
+El publicador exige que el tag y la release de destino no existan. Crea el tag con el commit validado, sube los veintidós assets a un borrador y verifica sus nombres, tamaños y SHA-256 antes de publicarlo. Vuelve a comprobar el tag antes de publicar. En una promoción también comprueba que la candidata publicada sigue apuntando al commit seleccionado.
 
 Las RC se publican como prerelease y nunca como latest. Para las estables, GitHub selecciona latest con su política de fecha de creación y versión SemVer (`make_latest: legacy`); el publicador no fuerza una estable antigua como latest cuando dos promociones terminan fuera de orden. Los tags y las releases existentes no se sobrescriben. Un error tras una mutación puede dejar un tag o borrador que exige inspección; no se borran automáticamente ni se repite una publicación a ciegas.
 

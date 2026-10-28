@@ -267,9 +267,9 @@ class ReleasePublicationTests(unittest.TestCase):
         original = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in self.bundle.iterdir()}
         result = self.invoke()
         self.assertEqual(result.returncode, 0, 'valid staged publication failed')
-        self.assertEqual(json.loads(result.stdout), {'version': self.version, 'assets': 18, 'published': True})
-        self.assertEqual(len(self.state['uploaded']), 18)
-        self.assertEqual(len({item['name'] for item in self.state['uploaded']}), 18)
+        self.assertEqual(json.loads(result.stdout), {'version': self.version, 'assets': 22, 'published': True})
+        self.assertEqual(len(self.state['uploaded']), 22)
+        self.assertEqual(len({item['name'] for item in self.state['uploaded']}), 22)
         uploaded_public = next(item for item in self.state['uploaded'] if item['name'].endswith('_signing-key.pem'))
         self.assertEqual(uploaded_public['digest'], self.public_digest, 'publication retained the CI key instead of the selected signing key')
         self.assertEqual(self.state['tag_checks'], 2)
@@ -400,7 +400,7 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertEqual(self.planned, expected)
         self.assertEqual(self.state['tag_create_count'], 1)
         self.assertTrue(self.state['published'])
-        self.assertEqual(len(self.state['uploaded']), 18)
+        self.assertEqual(len(self.state['uploaded']), 22)
 
     def test_workflow_does_not_restore_a_missing_required_source_output(self):
         outputs = {name: value for name, value in self.automatic_plan().items() if value}
