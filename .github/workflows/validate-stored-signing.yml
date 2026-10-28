@@ -9,20 +9,76 @@ permissions: {}
 
 jobs:
   validate:
-    name: Check the stored PEM and password without publishing
+    name: Check stored PEM structure, password format and exact decryption
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - name: Validate the actual Actions secrets offline
+      - name: Diagnose the actual Actions secrets offline
         env:
           SECRETWRIGHT_SIGNING_KEY: ${{ secrets.SECRETWRIGHT_SIGNING_KEY }}
           SECRETWRIGHT_SIGNING_PASSWORD: ${{ secrets.SECRETWRIGHT_SIGNING_PASSWORD }}
         run: |
           python3 - <<'PYTHON'
+          import base64
           import hashlib
           import os
+          import re
           import subprocess
           import sys
+          
+          
+          def observe(label, condition):
+              print(label + ': ' + ('SI' if condition else 'NO'))
+          
+          
+          def tlv(data, offset=0):
+              if offset + 2 > len(data):
+                  raise ValueError()
+              tag, length = data[offset], data[offset + 1]
+              cursor = offset + 2
+              if length & 128:
+                  count = length & 127
+                  if not 1 <= count <= 4 or cursor + count > len(data) or data[cursor] == 0:
+                      raise ValueError()
+                  length = int.from_bytes(data[cursor:cursor + count], 'big')
+                  if length < 128:
+                      raise ValueError()
+                  cursor += count
+              end = cursor + length
+              if end > len(data):
+                  raise ValueError()
+              return tag, data[cursor:end], end
+          
+          
+          def envelope(key):
+              if len(key.encode()) > 65536:
+                  raise ValueError()
+              lines = key.strip().splitlines()
+              if len(lines) < 3 or lines[0] != '-----BEGIN ENCRYPTED PRIVATE KEY-----' or lines[-1] != '-----END ENCRYPTED PRIVATE KEY-----':
+                  raise ValueError()
+              der = base64.b64decode(''.join(lines[1:-1]), validate=True)
+              tag, body, end = tlv(der)
+              if tag != 48 or end != len(der):
+                  raise ValueError()
+              algorithm_tag, algorithm, cursor = tlv(body)
+              cipher_tag, cipher, end = tlv(body, cursor)
+              oid_tag, oid, parameters = tlv(algorithm)
+              if algorithm_tag != 48 or cipher_tag != 4 or not cipher or end != len(body) or oid_tag != 6 or parameters >= len(algorithm):
+                  raise ValueError()
+              # OpenSSL validates the complete ASN.1; its dump is captured and never logged.
+              syntax = subprocess.run(['openssl', 'asn1parse', '-inform', 'DER'], input=der,
+                                      env={'PATH': os.defpath}, capture_output=True, check=False, timeout=30)
+              if syntax.returncode:
+                  raise ValueError()
+              return oid == bytes.fromhex('2a864886f70d01050d')
+          
+          
+          def check_key(key, password, public=False):
+              args = ['openssl', 'pkey', '-passin', 'env:SECRETWRIGHT_SIGNING_PASSWORD']
+              args += ['-pubout', '-outform', 'DER'] if public else ['-check', '-noout']
+              return subprocess.run(args, input=key.encode(),
+                                    env={'PATH': os.defpath, 'SECRETWRIGHT_SIGNING_PASSWORD': password},
+                                    capture_output=True, check=False, timeout=30)
           
           
           def main():
@@ -31,26 +87,47 @@ jobs:
               missing = [name for name in ('SECRETWRIGHT_SIGNING_KEY', 'SECRETWRIGHT_SIGNING_PASSWORD')
                          if not os.environ.get(name)]
               if missing:
-                  print('FAIL: missing Actions secret: ' + ', '.join(missing))
+                  print('FAIL: falta el secreto de Actions: ' + ', '.join(missing))
                   return 1
-              if len(key.encode()) > 65536 or not key.startswith('-----BEGIN ENCRYPTED PRIVATE KEY-----'):
-                  print('FAIL: SECRETWRIGHT_SIGNING_KEY must contain an encrypted PKCS#8 PEM.')
+              print('Password presente: SI. Los espacios, comillas y caracteres Unicode pueden ser validos si coinciden exactamente con la clave.')
+              observe('Password contiene CR o LF', '\r' in password or '\n' in password)
+              observe('Password tiene espacios en blanco en los extremos', password != password.strip())
+              observe('Password tiene comillas envolventes', len(password) >= 2 and password[0] == password[-1] and password[0] in '\"\'')
+              observe('Password contiene caracteres no ASCII', not password.isascii())
+              observe('Password tiene al menos 16 caracteres (recomendacion, no requisito de OpenSSL)', len(password) >= 16)
+              print('Estas observaciones no acreditan aleatoriedad ni fortaleza de la password.')
+              try:
+                  pbes2 = envelope(key)
+              except Exception:
+                  print('FAIL: el PEM no tiene una envoltura PKCS#8 cifrada valida (cabeceras, Base64 y ASN.1).')
+                  observe('PEM contiene saltos de linea escritos como barra-n', '\\n' in key)
                   return 1
-              selected = {'PATH': os.defpath, 'SECRETWRIGHT_SIGNING_PASSWORD': password}
-              check = subprocess.run(['openssl', 'pkey', '-passin', 'env:SECRETWRIGHT_SIGNING_PASSWORD',
-                                      '-check', '-noout'], input=key.encode(), env=selected,
-                                     capture_output=True, check=False, timeout=30)
+              print('PEM: cabeceras, Base64 y estructura ASN.1 de PKCS#8 cifrado correctas.')
+              observe('PEM usa el identificador de cifrado PBES2', pbes2)
+              print('La estructura correcta no demuestra por si sola que el contenido cifrado este intacto.')
+              check = check_key(key, password)
               if check.returncode:
-                  print('FAIL: the stored password cannot validate the stored PEM; check the password and PEM contents.')
+                  candidates = [
+                      ('quitar CR/LF de los extremos', password.strip('\r\n')),
+                      ('quitar espacios en blanco de los extremos', password.strip()),
+                  ]
+                  if len(password) >= 2 and password[0] == password[-1] and password[0] in '\"\'':
+                      candidates.append(('quitar las comillas envolventes', password[1:-1]))
+                  seen = {password}
+                  for label, candidate in candidates:
+                      if candidate and candidate not in seen:
+                          seen.add(candidate)
+                          if check_key(key, candidate).returncode == 0:
+                              print('FAIL: el par guardado no valida. La clave abre solo al ' + label + '; corrige el secreto y vuelve a validar.')
+                              return 1
+                  print('FAIL: el formato del PEM es correcto, pero la password guardada no permite descifrar y validar la clave. Puede haber una diferencia de password o contenido cifrado danado.')
                   return 1
-              public = subprocess.run(['openssl', 'pkey', '-passin', 'env:SECRETWRIGHT_SIGNING_PASSWORD',
-                                       '-pubout', '-outform', 'DER'], input=key.encode(), env=selected,
-                                      capture_output=True, check=False, timeout=30)
+              public = check_key(key, password, public=True)
               if public.returncode or len(public.stdout) != 44 or public.stdout[:12] != bytes.fromhex('302a300506032b6570032100'):
-                  print('FAIL: the stored PEM is not a valid Ed25519 signing key.')
+                  print('FAIL: la password abre la clave, pero no es una clave de firma Ed25519 valida.')
                   return 1
-              print('PASS: the stored Actions password opens and validates the stored encrypted Ed25519 PEM.')
-              print('Public key SHA-256 (DER): ' + hashlib.sha256(public.stdout).hexdigest())
+              print('PASS: el PEM guardado es Ed25519 cifrado valido y la password guardada lo abre exactamente, sin modificaciones.')
+              print('Huella SHA-256 de la clave publica DER: ' + hashlib.sha256(public.stdout).hexdigest())
               return 0
           
           
@@ -58,7 +135,7 @@ jobs:
               try:
                   status = main()
               except Exception:
-                  print('FAIL: signing secret validation could not complete.')
+                  print('FAIL: el diagnostico no pudo completarse; no se muestran detalles privados.')
                   status = 1
               sys.exit(status)
           PYTHON
