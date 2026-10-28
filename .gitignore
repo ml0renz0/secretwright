@@ -3,6 +3,7 @@
 /.package-work/
 /.container/
 /release-bundle/
+/.playground/
 __pycache__/
 /coverage.out
 *.test

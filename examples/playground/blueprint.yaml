@@ -1,0 +1,43 @@
+api_version: secretwright/v1
+name: playground
+resources:
+  - id: application_secrets
+    kind: kv_mount
+    name: playground
+    spec:
+      version: 2
+  - id: legacy_secrets
+    kind: kv_mount
+    name: legacy
+    spec:
+      version: 1
+  - id: application_reader
+    kind: policy
+    name: playground-read
+    depends_on: [application_secrets]
+    spec:
+      policy: |
+        path "playground/data/apps/*" {
+          capabilities = ["read"]
+        }
+        path "playground/metadata/apps" {
+          capabilities = ["read", "list"]
+        }
+        path "playground/metadata/apps/*" {
+          capabilities = ["read", "list"]
+        }
+        path "auth/token/lookup-self" {
+          capabilities = ["read"]
+        }
+  - id: reader_role
+    kind: approle
+    name: playground-reader
+    depends_on: [application_reader]
+    spec:
+      auth_mount: approle
+      token_policies: [playground-read]
+      token_ttl: 15m
+      token_max_ttl: 1h
+      secret_id_ttl: 10m
+      secret_id_num_uses: 1
+      token_num_uses: 0

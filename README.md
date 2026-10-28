@@ -10,6 +10,25 @@ Secretwright nace como una reescritura en Go de [VCLI](https://github.com/ml0ren
 
 Las operaciones usan el cliente oficial `github.com/hashicorp/vault/api`. `status` lee el estado del servidor sin enviar tokens; `auth check` comprueba el token mediante su endpoint de autoinspección. Los comandos KV utilizan el token seleccionado sin exigir una autoinspección previa.
 
+## Probar con un playground
+
+Con Docker local, Python 3, Go y `make`, prepara un Vault efímero con secretos ficticios, versiones y un AppRole de lectura:
+
+```bash
+make playground
+source .playground/env.sh
+secretwright tree /playground
+secretwright cat /playground/apps/payments/database
+secretwright shell
+# Demo guiada opcional:
+make playground-demo
+# Al terminar:
+make playground-down
+unset VAULT_ADDR VAULT_NAMESPACE VAULT_TOKEN
+```
+
+El laboratorio usa un [blueprint YAML](examples/playground/blueprint.yaml) para los montajes, la política y el AppRole, y Secretwright para cargar los valores de ejemplo. `env.sh` configura las variables que ya interpreta Secretwright y añade el binario al `PATH`; después usas la CLI directamente. Vault escucha solo en `127.0.0.1` con un puerto libre; las credenciales y el inventario quedan en `.playground/`, fuera de Git. Si ya tienes el binario instalado, puedes arrancar sin Go con `python3 scripts/playground.py up` y cargar el mismo archivo de entorno. La [guía del playground](examples/playground/README.md) explica qué contiene y cómo explorarlo.
+
 ## Compilar y ejecutar
 
 Requiere la versión de Go indicada en `go.mod` y `make` para los comandos de desarrollo. El binario resultante no necesita un runtime de Go ni las herramientas de desarrollo instaladas.

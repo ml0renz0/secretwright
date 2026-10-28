@@ -1,7 +1,7 @@
 GO ?= go
 GOFMT ?= gofmt
 
-.PHONY: build fmt fmt-check vet test integration integration-local check package-test package
+.PHONY: build fmt fmt-check vet test integration integration-local check package-test package playground playground-demo playground-down playground-test
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -o bin/secretwright ./cmd/secretwright
@@ -37,3 +37,15 @@ package-test:
 
 package: package-test
 	bash scripts/package_ci.sh
+
+playground: build
+	python3 scripts/playground.py up
+
+playground-demo:
+	python3 scripts/playground.py demo
+
+playground-down:
+	python3 scripts/playground.py down
+
+playground-test:
+	python3 -m unittest discover -s tests/playground -p 'test_*.py' -v

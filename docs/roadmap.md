@@ -2,7 +2,7 @@
 
 Este roadmap conserva las fases acordadas para la evolución de VCLI. Secretwright es el nuevo proyecto Go; VCLI queda como referencia histórica. Los nombres que incluyen «Forge» identifican provisionalmente el motor declarativo, no un producto separado.
 
-F00–F13 están integradas. El siguiente hito es la primera candidata de `0.1.0`, con [notas y alcance](releases/v0.1.0-rc.1.md). El [flujo TBD de releases](features/TBD-releases.md) automatiza las RC al integrar cambios en `main` y las estables mediante PR de promoción. La [guía de distribución](distribution.md) describe la configuración de firma y la publicación.
+F00–F13 están integradas y las candidatas de `0.1.0` ya se publican en [Releases](https://github.com/ml0renz0/secretwright/releases), con [notas y alcance](releases/v0.1.0-rc.1.md). El siguiente hito es validar la primera estable con el [playground de Vault precargado](../examples/playground/README.md). El [flujo TBD de releases](features/TBD-releases.md) automatiza las RC al integrar cambios en `main` y las estables mediante PR de promoción. La [guía de distribución](distribution.md) describe la configuración de firma y la publicación.
 
 | Fase | Título | Alcance previsto | Estado |
 | --- | --- | --- | --- |
