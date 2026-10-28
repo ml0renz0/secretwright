@@ -26,7 +26,7 @@ class DebianBuildTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.archive = FIXTURES.write_archive(self.root, 'linux', 'amd64', version=VERSION)
-        self.output = self.root / 'secretwright_1.2.3~rc.4_amd64.deb'
+        self.output = self.root / 'secretwright_1.2.3-rc.4_amd64.deb'
 
     def invoke(self, *, architecture='amd64', version=VERSION, output=None, archive=None, epoch=EPOCH):
         return subprocess.run([sys.executable, str(BUILD), str(archive or self.archive), str(output or self.output),
@@ -72,7 +72,7 @@ class DebianBuildTests(unittest.TestCase):
 
     def test_arm64_package_contains_the_exact_arm64_archive_binary(self):
         archive = FIXTURES.write_archive(self.root, 'linux', 'arm64', version=VERSION)
-        output = self.root / 'secretwright_1.2.3~rc.4_arm64.deb'
+        output = self.root / 'secretwright_1.2.3-rc.4_arm64.deb'
         self.assertEqual(self.invoke(architecture='arm64', archive=archive, output=output).returncode, 0)
         self.assertEqual(subprocess.check_output(['dpkg-deb', '--field', str(output), 'Architecture'], text=True).strip(), 'arm64')
         extracted = self.root / 'arm-extracted'
@@ -85,7 +85,7 @@ class DebianBuildTests(unittest.TestCase):
         self.assertEqual(subprocess.run(['dpkg', '--compare-versions', actual, 'lt', '1.2.3']).returncode, 0)
 
     def test_wrong_architecture_is_rejected_without_an_output(self):
-        output = self.root / 'secretwright_1.2.3~rc.4_arm64.deb'
+        output = self.root / 'secretwright_1.2.3-rc.4_arm64.deb'
         result = self.invoke(architecture='arm64', output=output)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(output.exists())

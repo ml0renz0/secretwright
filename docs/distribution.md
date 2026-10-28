@@ -39,7 +39,7 @@ El binario no requiere un runtime Go ni Kerberos. La conexión HTTPS usa las CA 
 
 Los paquetes `.deb` se publican para `amd64` y `arm64` entre los **Assets** de las nuevas releases. Las candidatas `v0.1.0-rc.2` y `v0.1.0-rc.3`, publicadas antes de incorporar este formato, no incluyen `.deb`.
 
-El nombre del paquete es `secretwright_DEB_VERSION_ARCH.deb`, acompañado de `secretwright_DEB_VERSION_ARCH.deb.spdx.json`. En Debian, la versión `0.1.0-rc.N` se representa como `0.1.0~rc.N`: el carácter `~` hace que la candidata ordene antes que `0.1.0`. El ejecutable conserva la versión SemVer original.
+El nombre del paquete es `secretwright_VERSION_ARCH.deb`, acompañado de `secretwright_VERSION_ARCH.deb.spdx.json`. En Debian, la versión `0.1.0-rc.N` se representa como `0.1.0~rc.N`: el carácter `~` hace que la candidata ordene antes que `0.1.0`. El nombre descargable y el ejecutable conservan la versión SemVer original; `~` se usa únicamente en los metadatos internos del `.deb`, porque GitHub cambia ese carácter al subir archivos.
 
 Elige una release que incluya los `.deb` y una clave pública confiable, guardada como `trusted-release-key.pem`. Este bloque Bash descarga el paquete para la arquitectura de Debian, verifica firma y checksum y se detiene si falla cualquier comprobación antes de instalar:
 
@@ -47,14 +47,12 @@ Elige una release que incluya los `.deb` y una clave pública confiable, guardad
 (
   set -euo pipefail
   VERSION=1.0.0
-  VERSION_CORE="${VERSION%%+*}"
-  DEB_VERSION="${VERSION_CORE/-/\~}${VERSION#"$VERSION_CORE"}"
   ARCH=$(dpkg --print-architecture)
   case "$ARCH" in
     amd64|arm64) ;;
     *) printf '%s\n' 'Arquitectura Debian no disponible.' >&2; exit 1 ;;
   esac
-  DEB="secretwright_${DEB_VERSION}_${ARCH}.deb"
+  DEB="secretwright_${VERSION}_${ARCH}.deb"
   gh release download "v$VERSION" --repo ml0renz0/secretwright \
     --pattern "$DEB" \
     --pattern "secretwright_${VERSION}_checksums.txt" \
@@ -70,7 +68,7 @@ Elige una release que incluya los `.deb` y una clave pública confiable, guardad
 )
 ```
 
-Sustituye `VERSION` por la versión publicada elegida; el bloque convierte también las prereleases. El repositorio es privado y `gh` necesita una sesión con acceso. La instalación usa el archivo local descargado; todavía no se publica un repositorio APT.
+Sustituye `VERSION` por la versión publicada elegida; el nombre del archivo conserva también las prereleases. El repositorio es privado y `gh` necesita una sesión con acceso. La instalación usa el archivo local descargado; todavía no se publica un repositorio APT.
 
 El paquete instala `/usr/bin/secretwright` y la documentación en `/usr/share/doc/secretwright/`, con `README.md` y `copyright`. Declara la dependencia `ca-certificates` para las conexiones HTTPS. No instala servicios ni crea archivos de configuración o secretos.
 

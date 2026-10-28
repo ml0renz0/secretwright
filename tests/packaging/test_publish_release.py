@@ -131,7 +131,7 @@ if args[:2] == ['release', 'create']:
     paths = [Path(arg) for arg in args[2:] if arg.startswith('/') and Path(arg).is_file()]
     state['created'] = True
     state['prerelease'] = '--prerelease' in args
-    state['uploaded'] = [{'name': path.name, 'size': path.stat().st_size,
+    state['uploaded'] = [{'name': path.name.replace('~', '.'), 'size': path.stat().st_size,
                           'digest': 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest(), 'state': 'uploaded'} for path in paths]
     state['paths'] = [str(path) for path in paths]
     if state.get('modify_staged_asset'):
