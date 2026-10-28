@@ -16,6 +16,7 @@ from urllib.parse import quote
 
 SCRIPTS = Path(__file__).resolve().parent
 MAX_API_RESPONSE = 4 << 20
+MAX_RELEASE_PAGES = 100
 NUMERIC = r'(?:0|[1-9][0-9]*)'
 STABLE_VERSION = re.compile(NUMERIC + r'\.' + NUMERIC + r'\.' + NUMERIC)
 SHA = re.compile(r'[0-9a-f]{40}')
@@ -110,7 +111,7 @@ def inventory(directory, names):
     return result
 
 
-def api_get(endpoint, *, cwd, environment):
+def api_get(endpoint, *, cwd, environment, value_type=dict):
     result = subprocess.run(
         ['gh', 'api', '--hostname', 'github.com', '--method', 'GET', '--include', endpoint],
         cwd=cwd, env=environment, capture_output=True, check=False, timeout=60,
@@ -131,9 +132,49 @@ def api_get(endpoint, *, cwd, environment):
         value = json.loads(body)
     except (ValueError, UnicodeError):
         fail()
-    if not isinstance(value, dict):
+    if not isinstance(value, value_type):
         fail()
     return code, value
+
+
+def find_release(repository, tag, *, cwd, environment):
+    """Resolve published releases and authenticated drafts without treating errors as absence."""
+    code, value = api_get(f'repos/{repository}/releases/tags/{quote(tag, safe="")}',
+                          cwd=cwd, environment=environment)
+    if code == 200:
+        return value
+    if code != 404:
+        fail()
+    # The tag endpoint hides unpublished drafts. A complete authenticated list
+    # is required before concluding that the tag has no release or draft.
+    match = None
+    seen = set()
+    for page in range(1, MAX_RELEASE_PAGES + 1):
+        code, releases = api_get(f'repos/{repository}/releases?per_page=100&page={page}',
+                                 cwd=cwd, environment=environment, value_type=list)
+        if code != 200 or len(releases) > 100:
+            fail()
+        for release in releases:
+            if (not isinstance(release, dict) or type(release.get('id')) is not int
+                    or release['id'] <= 0 or release['id'] in seen
+                    or not isinstance(release.get('tag_name'), str)):
+                fail()
+            seen.add(release['id'])
+            if release['tag_name'] == tag:
+                if match is not None:
+                    fail()
+                match = release
+        if len(releases) < 100:
+            return match
+    # Never interpret a pagination limit or repeating page as proof of absence.
+    fail()
+
+
+def require_release_id(value, release_id=None):
+    identity = value.get('id') if isinstance(value, dict) else None
+    if type(identity) is not int or identity <= 0 or release_id is not None and identity != release_id:
+        fail()
+    return identity
 
 
 def require_remote_tag(repository, tag, sha, *, cwd, environment):
@@ -311,9 +352,7 @@ def publish(root, environment, *, planned=None):
                      'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'):
             gh_environment.pop(name, None)
         gh_environment.update(GH_HOST='github.com', GH_PROMPT_DISABLED='1', GH_CONFIG_DIR=str(temporary / 'gh-config'))
-        endpoint = f'repos/{repository}/releases/tags/{quote(tag, safe="")}'
-        code, _ = api_get(endpoint, cwd=root, environment=gh_environment)
-        if code != 404:
+        if find_release(repository, tag, cwd=root, environment=gh_environment) is not None:
             fail()
         if planned is not None:
             if planned['candidate']:
@@ -331,36 +370,36 @@ def publish(root, environment, *, planned=None):
             command += ['--prerelease', '--latest=false']
         command += [str(stage / name) for name in sorted(names)]
         checked_run(command, cwd=root, environment=gh_environment)
+        remote = find_release(repository, tag, cwd=root, environment=gh_environment)
+        release_id = require_release_id(remote)
+        endpoint = f'repos/{repository}/releases/{release_id}'
         code, remote = api_get(endpoint, cwd=root, environment=gh_environment)
         if code != 200:
             fail()
+        require_release_id(remote, release_id)
         require_draft(remote, tag, local, prerelease)
         if inventory(stage, names) != local:
             fail()
         require_remote_tag(repository, tag, sha, cwd=root, environment=gh_environment)
         if planned is not None and planned['candidate']:
             require_candidate_release(repository, planned['candidate'], sha, cwd=root, environment=gh_environment)
-        if prerelease:
-            checked_run(['gh', 'release', 'edit', tag, '--repo', repository, '--draft=false', '--latest=false'],
-                        cwd=root, environment=gh_environment)
-        else:
-            release_id = remote.get('id')
-            if type(release_id) is not int or release_id <= 0:
-                fail()
-            # Let GitHub compare published versions server-side. Forcing latest=true can
-            # regress the latest stable when two promotions finish in reverse order.
-            result = checked_run(['gh', 'api', '--hostname', 'github.com', '--method', 'PATCH',
-                                  '-F', 'draft=false', '-f', 'make_latest=legacy',
-                                  f'repos/{repository}/releases/{release_id}'],
-                                 cwd=root, environment=gh_environment)
-            try:
-                published = json.loads(result)
-            except (ValueError, UnicodeError):
-                fail()
-            if (not isinstance(published, dict) or type(published.get('id')) is not int
-                    or published['id'] != release_id):
-                fail()
-            require_draft(published, tag, local, False, draft=False)
+        code, remote = api_get(endpoint, cwd=root, environment=gh_environment)
+        if code != 200:
+            fail()
+        require_release_id(remote, release_id)
+        require_draft(remote, tag, local, prerelease)
+        # Publish the exact verified draft, without resolving a possibly hidden
+        # draft by tag again. GitHub selects stable latest server-side.
+        latest_policy = 'false' if prerelease else 'legacy'
+        result = checked_run(['gh', 'api', '--hostname', 'github.com', '--method', 'PATCH',
+                              '-F', 'draft=false', '-f', 'make_latest=' + latest_policy, endpoint],
+                             cwd=root, environment=gh_environment)
+        try:
+            published = json.loads(result)
+        except (ValueError, UnicodeError):
+            fail()
+        require_release_id(published, release_id)
+        require_draft(published, tag, local, prerelease, draft=False)
     return {'version': version, 'assets': len(names), 'published': True}
 
 

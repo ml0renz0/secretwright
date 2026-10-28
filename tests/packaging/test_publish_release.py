@@ -40,6 +40,19 @@ state.setdefault('calls', []).append({'args': args, 'signing_key_present': 'SECR
     'password_present': 'SECRETWRIGHT_SIGNING_PASSWORD' in os.environ, 'token_present': bool(os.environ.get('GH_TOKEN')),
     'host': os.environ.get('GH_HOST'), 'fallback_token_present': 'GITHUB_TOKEN' in os.environ})
 def save(): state_path.write_text(json.dumps(state))
+def release_value():
+    assets = [dict(asset) for asset in state.get('uploaded', [])]
+    error = state.get('asset_error')
+    if state.get('late_asset_error') and state.get('release_id_checks', 0) >= 2: error = 'size'
+    if error == 'digest': assets[0]['digest'] = 'sha256:' + '0' * 64
+    if error == 'size': assets[0]['size'] += 1
+    if error == 'state': assets[0]['state'] = 'starter'
+    if error == 'extra': assets.append({'name': 'unexpected.txt', 'size': 1, 'digest': 'sha256:' + '0'*64, 'state': 'uploaded'})
+    if error == 'missing': assets.pop()
+    if error == 'duplicate': assets[-1] = dict(assets[0])
+    return {'id': state.get('release_id', 123), 'tag_name': state['tag'] if error != 'tag' else 'v9.9.9',
+            'draft': not state.get('published', False) and error != 'not-draft',
+            'prerelease': state.get('prerelease', False), 'assets': assets}
 def reply(status, body, success=None):
     save()
     print('HTTP/2.0 ' + str(status) + ' Controlled Fixture\r\nContent-Type: application/json\r\n\r\n' + json.dumps(body))
@@ -48,8 +61,9 @@ if args[0] == 'api':
     endpoint = args[-1]
     if '/releases/' in endpoint and '--method' in args and args[args.index('--method') + 1] == 'PATCH':
         state['published'] = True
-        state['latest_policy'] = args[args.index('make_latest=legacy')] if 'make_latest=legacy' in args else None
-        save(); print(json.dumps({'id': 123, 'tag_name': state['tag'], 'draft': False, 'prerelease': False, 'assets': state['uploaded']})); sys.exit(0)
+        state['latest_policy'] = next((arg for arg in args if arg.startswith('make_latest=')), None)
+        state['patch_endpoint'] = endpoint
+        save(); print(json.dumps(release_value())); sys.exit(0)
     if '/git/refs' in endpoint and '--method' in args and args[args.index('--method') + 1] == 'POST':
         if state.get('tag_create_error'):
             save(); print('private-f13-upstream-error', file=sys.stderr); sys.exit(1)
@@ -81,21 +95,38 @@ if args[0] == 'api':
         target = {'type': 'tag', 'sha': 'b' * 40} if state.get('tag_cycle') else {'type': 'commit', 'sha': 'f' * 40 if moved else state['sha']}
         reply(200, {'object': target})
     if '/releases/tags/' in endpoint:
-        if not state.get('created'):
-            status = state.get('existing_status', 404)
-            if status == 0:
-                save(); print('private-f13-upstream-error', file=sys.stderr); sys.exit(1)
-            reply(status, {'message': 'private-f13-upstream-error'})
-        assets = [dict(asset) for asset in state['uploaded']]
-        error = state.get('asset_error')
-        if error == 'digest': assets[0]['digest'] = 'sha256:' + '0' * 64
-        if error == 'size': assets[0]['size'] += 1
-        if error == 'state': assets[0]['state'] = 'starter'
-        if error == 'extra': assets.append({'name': 'unexpected.txt', 'size': 1, 'digest': 'sha256:' + '0'*64, 'state': 'uploaded'})
-        if error == 'missing': assets.pop()
-        if error == 'duplicate': assets[-1] = dict(assets[0])
-        reply(200, {'id': state.get('release_id', 123), 'tag_name': state['tag'] if error != 'tag' else 'v9.9.9', 'draft': error != 'not-draft',
-                    'prerelease': state.get('prerelease', False), 'assets': assets})
+        # The tag endpoint does not expose a draft, even to its creator.
+        if state.get('published'):
+            reply(200, release_value())
+        status = state.get('existing_status', 404) if not state.get('created') else 404
+        if status == 0:
+            save(); print('private-f13-upstream-error', file=sys.stderr); sys.exit(1)
+        reply(status, {'message': 'private-f13-upstream-error'})
+    if '/releases?' in endpoint:
+        state['list_checks'] = state.get('list_checks', 0) + 1
+        page = int(endpoint.rsplit('page=', 1)[1])
+        status = state.get('list_status', 200)
+        if status != 200: reply(status, {'message': 'private-f13-upstream-error'})
+        if state.get('malformed_list'):
+            reply(200, {'not': 'a release page'})
+        if state.get('repeat_list_page'):
+            reply(200, [{'id': index + 1000, 'tag_name': 'v0.0.' + str(index)} for index in range(100)])
+        if state.get('paginated_list') and page == 1:
+            reply(200, [{'id': index + 1000, 'tag_name': 'v0.0.' + str(index)} for index in range(100)])
+        expected_page = 2 if state.get('paginated_list') else 1
+        releases = []
+        if page == expected_page and state.get('existing_draft') and not state.get('created'):
+            releases = [{'id': 456, 'tag_name': state['tag'], 'draft': True}]
+        if page == expected_page and state.get('created'):
+            releases = [release_value()]
+            if state.get('duplicate_draft'):
+                releases.append(dict(release_value(), id=456))
+        reply(200, releases)
+    if '/releases/' in endpoint and endpoint.rsplit('/', 1)[1].isdigit():
+        state['release_id_checks'] = state.get('release_id_checks', 0) + 1
+        value = release_value()
+        if state.get('wrong_id_response'): value['id'] = 987
+        reply(200, value)
 if args[:2] == ['release', 'create']:
     paths = [Path(arg) for arg in args[2:] if arg.startswith('/') and Path(arg).is_file()]
     state['created'] = True
@@ -289,7 +320,7 @@ class ReleasePublicationTests(unittest.TestCase):
             with self.subTest(error=error):
                 self.state = {'sha': self.sha, 'tag': 'v1.2.3', 'asset_error': error}
                 self.rejected(created=True)
-                self.assertFalse(any(call['args'][:2] == ['release', 'edit'] for call in self.state['calls']))
+                self.assertFalse(any('PATCH' in call['args'] for call in self.state['calls']))
 
     def test_upload_failure_leaves_draft_without_retry_delete_or_clobber(self):
         self.state['create_error'] = True
@@ -388,8 +419,9 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertIn('ref=refs/tags/v1.2.3-rc.7', post)
         self.assertIn('sha=' + self.sha, post)
         self.assertTrue(self.state['published'])
-        edit = next(call['args'] for call in self.state['calls'] if call['args'][:2] == ['release', 'edit'])
-        self.assertIn('--latest=false', edit)
+        edit = next(call['args'] for call in self.state['calls'] if 'PATCH' in call['args'])
+        self.assertIn('make_latest=false', edit)
+        self.assertEqual(edit[-1], 'repos/example/secretwright/releases/123')
 
     def test_stable_promotes_candidate_sha_while_main_has_advanced_and_marks_latest(self):
         self.automatic_plan('stable')
@@ -502,6 +534,52 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertFalse(self.state.get('calls'))
 
 
+
+
+    def test_draft_hidden_from_tag_endpoint_is_validated_and_published_by_numeric_id(self):
+        self.automatic_plan()
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, 'a real-style hidden draft could not be published')
+        self.assertTrue(self.state['published'])
+        self.assertEqual(self.state['patch_endpoint'], 'repos/example/secretwright/releases/123')
+        self.assertGreaterEqual(self.state['release_id_checks'], 2)
+        self.assertGreaterEqual(self.state['list_checks'], 2)
+
+    def test_existing_draft_hidden_from_tag_endpoint_blocks_before_tag_creation(self):
+        self.automatic_plan()
+        original = dict(self.state)
+        for paginated in (False, True):
+            with self.subTest(paginated=paginated):
+                self.state = dict(original, existing_draft=True, paginated_list=paginated)
+                self.rejected()
+                self.assertFalse(self.state.get('tag_created'))
+                self.assertFalse(self.state.get('created'))
+                self.assertFalse(any('POST' in call['args'] or 'PATCH' in call['args'] for call in self.state['calls']))
+
+    def test_paginated_draft_lookup_reaches_later_pages(self):
+        self.automatic_plan()
+        self.state['paginated_list'] = True
+        self.assertEqual(self.invoke().returncode, 0)
+        self.assertEqual(self.state['list_checks'], 4)
+        self.assertTrue(self.state['published'])
+
+    def test_draft_list_errors_and_repeated_pages_fail_closed(self):
+        original = dict(self.automatic_plan())
+        for extra in ({'list_status': 403}, {'list_status': 404}, {'list_status': 500}, {'malformed_list': True},
+                      {'repeat_list_page': True}):
+            with self.subTest(extra=extra):
+                self.planned = dict(original)
+                self.state = {'sha': self.sha, 'tag': original['tag'], 'automatic': True, **extra}
+                self.rejected()
+                self.assertFalse(self.state.get('tag_created'))
+                self.assertLessEqual(self.state.get('list_checks', 0), 2)
+
+    def test_duplicate_draft_or_changed_numeric_id_prevents_publication(self):
+        for extra in ({'duplicate_draft': True}, {'wrong_id_response': True}, {'late_asset_error': True}):
+            with self.subTest(extra=extra):
+                self.state = {'sha': self.sha, 'tag': 'v1.2.3', **extra}
+                self.rejected(created=True)
+                self.assertFalse(any('PATCH' in call['args'] for call in self.state['calls']))
 
     def test_stable_invalid_draft_identity_prevents_undraft(self):
         for identity in (True, None, 0, -1, '123', '123/../../other'):
