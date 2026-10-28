@@ -1,0 +1,218 @@
+name: Verify published Debian release
+
+on:
+  push:
+    branches:
+      - codex/verify-debian-release
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Verify downloaded release assets and trusted signing identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download and verify the actual published RC
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_RELEASE_TAG: v0.1.0-rc.5
+          EXPECTED_SOURCE_SHA: aca7320c9cbdd42b1a516963167ed8b627e71166
+          TRUSTED_PUBLIC_KEY_DER_SHA256: 74b00d4b2a79b2b6deac6d347a13cf75444973a6ef8e60c7ee5eacbaf34edf2d
+        run: |
+          set -euo pipefail
+          umask 077
+          acceptance_directory=$(mktemp -d "$RUNNER_TEMP/secretwright-release-acceptance.XXXXXXXX")
+          chmod 0700 "$acceptance_directory"
+          trap 'rm -rf -- "$acceptance_directory"' EXIT
+          export SECRETWRIGHT_ACCEPTANCE_DIRECTORY="$acceptance_directory"
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import hashlib
+          import importlib.util
+          import json
+          import os
+          import re
+          import stat
+          import subprocess
+          import sys
+          from urllib.parse import quote
+
+          STAGE = 'inputs'
+          MAX_API = 4 << 20
+
+          def require(condition):
+              if not condition:
+                  raise ValueError()
+
+          def run(arguments, environment, timeout=180):
+              result = subprocess.run(arguments, env=environment, capture_output=True,
+                                      check=False, timeout=timeout)
+              require(result.returncode == 0 and len(result.stdout) <= MAX_API)
+              return result.stdout
+
+          def api(endpoint, environment):
+              result = subprocess.run(['gh', 'api', '--hostname', 'github.com', '--method', 'GET',
+                                       '--include', endpoint], env=environment,
+                                      capture_output=True, check=False, timeout=60)
+              require(len(result.stdout) <= MAX_API)
+              headers, separator, body = result.stdout.replace(b'\r\n', b'\n').partition(b'\n\n')
+              status = re.fullmatch(rb'HTTP/[0-9]+(?:\.[0-9]+)? ([0-9]{3})(?: [^\n]*)?', headers.split(b'\n')[0])
+              require(separator and status is not None)
+              code = int(status.group(1))
+              if code == 404 and result.returncode != 0:
+                  return code, None
+              require(code == 200 and result.returncode == 0)
+              value = json.loads(body)
+              require(isinstance(value, dict))
+              return code, value
+
+          def remote_tag(repository, tag, sha, environment):
+              code, value = api(f'repos/{repository}/git/ref/tags/{quote(tag, safe="")}', environment)
+              require(code == 200)
+              target = value.get('object')
+              visited = set()
+              for _ in range(8):
+                  require(isinstance(target, dict) and re.fullmatch('[0-9a-f]{40}', str(target.get('sha', ''))) is not None)
+                  identity, kind = target['sha'], target.get('type')
+                  if kind == 'commit':
+                      require(identity == sha)
+                      return
+                  require(kind == 'tag' and identity not in visited)
+                  visited.add(identity)
+                  code, value = api(f'repos/{repository}/git/tags/{identity}', environment)
+                  require(code == 200)
+                  target = value.get('object')
+              raise ValueError()
+
+          def debian_helpers():
+              spec = importlib.util.spec_from_file_location('published_debian_names', Path('scripts/verify_deb.py'))
+              require(spec is not None and spec.loader is not None)
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[spec.name] = module
+              spec.loader.exec_module(module)
+              return module
+
+          def names_for(version):
+              names = set()
+              for system in ('linux', 'darwin', 'windows'):
+                  for machine in ('amd64', 'arm64'):
+                      prefix = f'secretwright_{version}_{system}_{machine}'
+                      names.add(prefix + ('.zip' if system == 'windows' else '.tar.gz'))
+                      names.add(prefix + '.spdx.json')
+              debian = debian_helpers()
+              for machine in ('amd64', 'arm64'):
+                  names.add(debian.deb_name(version, machine))
+                  names.add(debian.deb_sbom_name(version, machine))
+              names.add(f'secretwright_{version}_linux_multiarch.oci.tar')
+              for machine in ('amd64', 'arm64'):
+                  names.add(f'secretwright_{version}_linux_{machine}.image.spdx.json')
+              names.update(f'secretwright_{version}_{suffix}' for suffix in ('checksums.txt', 'checksums.sig', 'signing-key.pem'))
+              return names
+
+          def asset_limit(name):
+              if name.endswith('.oci.tar'):
+                  return 512 << 20
+              if name.endswith(('.tar.gz', '.zip', '.deb')):
+                  return 128 << 20
+              if name.endswith('.spdx.json'):
+                  return 32 << 20
+              return 64 << 10
+
+          def release_metadata(repository, tag, names, environment):
+              code, value = api(f'repos/{repository}/releases/tags/{quote(tag, safe="")}', environment)
+              require(code == 200 and type(value.get('id')) is int and value['id'] > 0)
+              require(value.get('tag_name') == tag and value.get('draft') is False and value.get('prerelease') is True)
+              require(isinstance(value.get('published_at'), str) and bool(value['published_at'].strip()))
+              assets = value.get('assets')
+              require(isinstance(assets, list) and len(assets) == 22)
+              indexed = {}
+              for asset in assets:
+                  require(isinstance(asset, dict))
+                  name = asset.get('name')
+                  require(isinstance(name, str) and name in names and name not in indexed)
+                  require(type(asset.get('id')) is int and asset['id'] > 0)
+                  require(type(asset.get('size')) is int and 0 < asset['size'] <= asset_limit(name))
+                  require(asset.get('state') == 'uploaded' and re.fullmatch('sha256:[0-9a-f]{64}', str(asset.get('digest', ''))) is not None)
+                  indexed[name] = {field: asset[field] for field in ('id', 'size', 'digest', 'state')}
+              require(set(indexed) == names)
+              return {'id': value['id'], 'published_at': value['published_at'], 'assets': indexed}
+
+          def downloaded_inventory(directory, expected):
+              require({path.name for path in directory.iterdir()} == set(expected))
+              for name, asset in expected.items():
+                  path = directory / name
+                  before = path.lstat()
+                  require(stat.S_ISREG(before.st_mode) and before.st_size == asset['size'])
+                  descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+                  digest = hashlib.sha256()
+                  with os.fdopen(descriptor, 'rb') as source:
+                      require(source.seek(0, 2) == before.st_size)
+                      source.seek(0)
+                      for body in iter(lambda: source.read(1 << 20), b''):
+                          digest.update(body)
+                  require('sha256:' + digest.hexdigest() == asset['digest'])
+
+          try:
+              repository = os.environ.get('GITHUB_REPOSITORY', '')
+              tag, sha = os.environ.get('EXPECTED_RELEASE_TAG', ''), os.environ.get('EXPECTED_SOURCE_SHA', '')
+              trusted = os.environ.get('TRUSTED_PUBLIC_KEY_DER_SHA256', '')
+              number = r'(?:0|[1-9][0-9]*)'
+              require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', repository) is not None)
+              require(re.fullmatch('v' + number + r'\.' + number + r'\.' + number + r'-rc\.[1-9][0-9]*', tag) is not None)
+              require(re.fullmatch('[0-9a-f]{40}', sha) is not None and re.fullmatch('[0-9a-f]{64}', trusted) is not None)
+              directory = Path(os.environ['SECRETWRIGHT_ACCEPTANCE_DIRECTORY'])
+              require(directory.is_dir() and stat.S_IMODE(directory.stat().st_mode) == 0o700)
+              assets = directory / 'assets'
+              assets.mkdir(mode=0o700)
+              environment = dict(os.environ)
+              for name in ('GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN',
+                           'SECRETWRIGHT_SIGNING_KEY', 'SECRETWRIGHT_SIGNING_PASSWORD'):
+                  environment.pop(name, None)
+              require(bool(environment.get('GH_TOKEN', '').strip()))
+              environment.update(GH_HOST='github.com', GH_PROMPT_DISABLED='1', GH_CONFIG_DIR=str(directory / 'gh'))
+              offline = dict(environment)
+              offline.pop('GH_TOKEN', None)
+              version = tag[1:]
+              names = names_for(version)
+              require(len(names) == 22)
+              run(['git', 'merge-base', '--is-ancestor', sha, 'HEAD'], offline)
+              STAGE = 'published-metadata-and-source-tag'
+              metadata = release_metadata(repository, tag, names, environment)
+              remote_tag(repository, tag, sha, environment)
+              STAGE = 'download-published-assets'
+              run(['gh', 'release', 'download', tag, '--repo', repository, '--dir', str(assets)], environment)
+              STAGE = 'downloaded-asset-digests'
+              downloaded_inventory(assets, metadata['assets'])
+              STAGE = 'independent-signing-identity'
+              public_key = assets / f'secretwright_{version}_signing-key.pem'
+              public_der = run(['openssl', 'pkey', '-pubin', '-in', str(public_key), '-outform', 'DER'], offline)
+              require(len(public_der) == 44 and public_der[:12] == bytes.fromhex('302a300506032b6570032100'))
+              fingerprint = hashlib.sha256(public_der).hexdigest()
+              require(fingerprint == trusted)
+              STAGE = 'trusted-manifest-signature'
+              run(['bash', 'scripts/verify_signature.sh', str(assets), version, str(public_key)], offline)
+              STAGE = 'all-payload-checksums-and-contents'
+              report = json.loads(run([sys.executable, 'scripts/verify_release.py', str(assets), '--version', version], offline))
+              require(report.get('version') == version and report.get('archives') == 6 and report.get('debian_packages') == 2 and report.get('sboms') == 10
+                      and report.get('artifacts') == 19 and report.get('containers') is True)
+              STAGE = 'unchanged-published-state'
+              require(release_metadata(repository, tag, names, environment) == metadata)
+              remote_tag(repository, tag, sha, environment)
+              downloaded_inventory(assets, metadata['assets'])
+              code, latest = api(f'repos/{repository}/releases/latest', environment)
+              require(code == 404 or latest.get('tag_name') != tag)
+              print(json.dumps({'tag': tag, 'source_sha': sha, 'assets': 22, 'manifest_payloads': 19,
+                                'archives': 6, 'debian_packages': 2, 'sboms': 10, 'oci_platforms': 2,
+                                'prerelease': True, 'latest': False, 'signature_verified': True,
+                                'trusted_public_key_der_sha256': fingerprint, 'published_assets_verified': True}, sort_keys=True))
+          except Exception:
+              print('Debian release acceptance failed [stage=' + STAGE + '].', file=sys.stderr)
+              sys.exit(1)
+          PYTHON
