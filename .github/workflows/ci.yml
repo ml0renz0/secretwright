@@ -170,7 +170,9 @@ jobs:
           SECRETWRIGHT_RELEASE_SHA: ${{ inputs.source_sha }}
           SECRETWRIGHT_RELEASE_TAG: ${{ inputs.release_tag }}
         run: bash scripts/package_ci.sh
+      # PRs validate packaging, but only release promotion needs the stored bundle.
       - name: Preserve verified distribution bundle
+        if: ${{ inputs.source_sha != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: secretwright-release-bundle
