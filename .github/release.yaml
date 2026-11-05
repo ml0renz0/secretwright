@@ -1,4 +1,4 @@
 # The automatic release workflow numbers candidates with its run number.
-next_version: 0.1.0
+next_version: 0.1.1
 # To promote, select a published candidate and advance next_version in the same PR.
-promote_candidate: null
+promote_candidate: v0.1.0-rc.7
